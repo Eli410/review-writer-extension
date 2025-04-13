@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Amazon Review Writer</title>
+  <style>
+    body {
+      width: 400px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    button {
+      padding: 8px 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .success {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+    .error {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+    #productTitle {
+      font-size: 14px;
+      margin: 10px 0;
+      word-wrap: break-word;
+    }
+    #reviewOutput {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+      white-space: pre-wrap;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .loading {
+      display: none;
+      text-align: center;
+      margin: 10px 0;
+    }
+    .loading::after {
+      content: "Generating review...";
+      animation: dots 1.5s steps(5, end) infinite;
+    }
+    @keyframes dots {
+      0%, 20% { content: "Generating review."; }
+      40% { content: "Generating review.."; }
+      60% { content: "Generating review..."; }
+      80% { content: "Generating review...."; }
+      100% { content: "Generating review....."; }
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    #extraDirections {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-family: inherit;
+    }
+    .input-label {
+      font-size: 14px;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Amazon Review Writer</h2>
+    <div id="productTitle"></div>
+    <div class="input-label">Extra Directions (Optional):</div>
+    <textarea id="extraDirections" rows="3" placeholder="Add any specific instructions for the review generation..."></textarea>
+    <button id="generateReview">Generate Review</button>
+    <div id="loading" class="loading"></div>
+    <div id="reviewOutput"></div>
+    <div class="button-group">
+      <button id="regenerateReview" style="display: none;">Regenerate</button>
+      <button id="copyReview" style="display: none;">Copy Review</button>
+    </div>
+    <div id="status"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html> 
