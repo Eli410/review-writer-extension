@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>亚马逊评论生成器</title>
+  <title>Amazon Review Writer</title>
   <style>
     body {
       width: 400px;
@@ -63,15 +63,15 @@
       margin: 10px 0;
     }
     .loading::after {
-      content: "正在生成评论...";
+      content: "Generating review...";
       animation: dots 1.5s steps(5, end) infinite;
     }
     @keyframes dots {
-      0%, 20% { content: "正在生成评论."; }
-      40% { content: "正在生成评论.."; }
-      60% { content: "正在生成评论..."; }
-      80% { content: "正在生成评论...."; }
-      100% { content: "正在生成评论....."; }
+      0%, 20% { content: "Generating review."; }
+      40% { content: "Generating review.."; }
+      60% { content: "Generating review..."; }
+      80% { content: "Generating review...."; }
+      100% { content: "Generating review....."; }
     }
     .button-group {
       display: flex;
@@ -132,40 +132,40 @@
 </head>
 <body>
   <div class="container">
-    <h2>亚马逊评论生成器</h2>
+    <h2>Amazon Review Writer</h2>
     <div id="productTitle"></div>
     
     <div class="persona-section">
       <div class="persona-header">
-        <div class="persona-title">评论者角色</div>
-        <button id="regeneratePersona">重新生成</button>
+        <div class="persona-title">Reviewer Persona</div>
+        <button id="regeneratePersona">Regenerate</button>
       </div>
       <div class="persona-field">
-        <label for="personaAge">年龄：</label>
+        <label for="personaAge">Age:</label>
         <input type="number" id="personaAge" min="18" max="100">
       </div>
       <div class="persona-field">
-        <label for="personaGender">性别：</label>
+        <label for="personaGender">Gender:</label>
         <input type="text" id="personaGender">
       </div>
       <div class="persona-field">
-        <label for="personaOccupation">职业：</label>
+        <label for="personaOccupation">Occupation:</label>
         <input type="text" id="personaOccupation">
       </div>
       <div class="persona-field">
-        <label for="personaDescription">描述：</label>
+        <label for="personaDescription">Description:</label>
         <textarea id="personaDescription"></textarea>
       </div>
     </div>
 
-    <div class="input-label">额外说明（可选）：</div>
-    <textarea id="extraDirections" rows="3" placeholder="添加任何特定的评论生成说明..."></textarea>
-    <button id="generateReview">生成评论</button>
+    <div class="input-label">Extra Directions (Optional):</div>
+    <textarea id="extraDirections" rows="3" placeholder="Add any specific instructions for the review generation..."></textarea>
+    <button id="generateReview">Generate Review</button>
     <div id="loading" class="loading"></div>
     <div id="reviewOutput"></div>
     <div class="button-group">
-      <button id="regenerateReview" style="display: none;">重新生成</button>
-      <button id="copyReview" style="display: none;">复制评论</button>
+      <button id="regenerateReview" style="display: none;">Regenerate</button>
+      <button id="copyReview" style="display: none;">Copy Review</button>
     </div>
     <div id="status"></div>
   </div>
