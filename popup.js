@@ -90,26 +90,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.error(message);
   }
 
-  // Function to save data to storage
-  async function saveToStorage(key, data) {
-    try {
-      await chrome.storage.local.set({ [key]: data });
-    } catch (error) {
-      console.error(`Error saving ${key} to storage:`, error);
-    }
-  }
-
-  // Function to get data from storage
-  async function getFromStorage(key) {
-    try {
-      const result = await chrome.storage.local.get(key);
-      return result[key];
-    } catch (error) {
-      console.error(`Error getting ${key} from storage:`, error);
-      return null;
-    }
-  }
-
   // Function to update persona fields
   function updatePersonaFields(persona) {
     personaAgeInput.value = persona.age;
@@ -135,16 +115,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       statusDiv.textContent = 'Generating persona...';
       statusDiv.className = '';
 
-      // Get product info from storage or fetch it
-      let productInfo = await getFromStorage(`productInfo_${currentTabId}`);
-      
+      const productInfo = await getProductInfo();
       if (!productInfo) {
-        productInfo = await getProductInfo();
-        if (!productInfo) {
-          throw new Error('Could not fetch product information');
-        }
-        // Save product info to storage
-        await saveToStorage(`productInfo_${currentTabId}`, productInfo);
+        throw new Error('Could not fetch product information');
       }
 
       // Send message to content script to generate persona
@@ -160,10 +133,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       const persona = response.persona;
-      // Save persona to storage
-      await saveToStorage(`persona_${currentTabId}`, persona);
-      
-      // Update the persona fields
       updatePersonaFields(persona);
       
       statusDiv.textContent = 'Persona generated successfully!';
@@ -180,16 +149,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
       showLoading();
 
-      // Get product info from storage or fetch it
-      let productInfo = await getFromStorage(`productInfo_${currentTabId}`);
-      
+      const productInfo = await getProductInfo();
       if (!productInfo) {
-        productInfo = await getProductInfo();
-        if (!productInfo) {
-          throw new Error('Could not fetch product information');
-        }
-        // Save product info to storage
-        await saveToStorage(`productInfo_${currentTabId}`, productInfo);
+        throw new Error('Could not fetch product information');
       }
 
       // Get current persona
@@ -210,9 +172,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       const review = response.review;
-      // Save review to storage
-      await saveToStorage(`review_${currentTabId}`, review);
-      
       reviewOutputDiv.textContent = review;
       copyButton.style.display = 'block';
       regenerateButton.style.display = 'block';
@@ -255,24 +214,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       productTitleDiv.textContent = title;
       productTitleDiv.style.display = 'block';
       
-      // Check if we have a stored persona for this tab
-      const storedPersona = await getFromStorage(`persona_${currentTabId}`);
-      if (storedPersona) {
-        updatePersonaFields(storedPersona);
-      } else {
-        // Generate initial persona
-        await generatePersona();
-      }
-      
-      // Check if we have a stored review for this tab
-      const storedReview = await getFromStorage(`review_${currentTabId}`);
-      if (storedReview) {
-        reviewOutputDiv.textContent = storedReview;
-        copyButton.style.display = 'block';
-        regenerateButton.style.display = 'block';
-        statusDiv.textContent = 'Review loaded from storage';
-        statusDiv.className = 'success';
-      }
+      // Generate initial persona
+      await generatePersona();
     } else {
       productTitleDiv.textContent = 'Could not fetch product title';
       productTitleDiv.style.color = 'red';
@@ -285,14 +228,5 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Generate button click handler
   generateButton.addEventListener('click', () => {
     generateReview(extraDirectionsInput.value);
-  });
-
-  // Listen for tab updates to clear stored data when tab is closed
-  chrome.tabs.onRemoved.addListener(async (tabId) => {
-    if (tabId === currentTabId) {
-      // Clear stored data when the tab is closed
-      await chrome.storage.local.remove([`productInfo_${tabId}`, `review_${tabId}`, `persona_${tabId}`]);
-      currentTabId = null;
-    }
   });
 }); 
