@@ -90,12 +90,73 @@
       margin-top: 10px;
       font-weight: bold;
     }
+    .persona-section {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 10px;
+      background-color: #f9f9f9;
+    }
+    .persona-field {
+      margin-bottom: 8px;
+    }
+    .persona-field label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 2px;
+    }
+    .persona-field input, .persona-field textarea {
+      width: 100%;
+      padding: 4px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .persona-field textarea {
+      height: 60px;
+      resize: vertical;
+    }
+    .persona-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .persona-title {
+      font-weight: bold;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h2>Amazon Review Writer</h2>
     <div id="productTitle"></div>
+    
+    <div class="persona-section">
+      <div class="persona-header">
+        <div class="persona-title">Reviewer Persona</div>
+        <button id="regeneratePersona">Regenerate</button>
+      </div>
+      <div class="persona-field">
+        <label for="personaAge">Age:</label>
+        <input type="number" id="personaAge" min="18" max="100">
+      </div>
+      <div class="persona-field">
+        <label for="personaGender">Gender:</label>
+        <input type="text" id="personaGender">
+      </div>
+      <div class="persona-field">
+        <label for="personaOccupation">Occupation:</label>
+        <input type="text" id="personaOccupation">
+      </div>
+      <div class="persona-field">
+        <label for="personaDescription">Description:</label>
+        <textarea id="personaDescription"></textarea>
+      </div>
+    </div>
+
     <div class="input-label">Extra Directions (Optional):</div>
     <textarea id="extraDirections" rows="3" placeholder="Add any specific instructions for the review generation..."></textarea>
     <button id="generateReview">Generate Review</button>

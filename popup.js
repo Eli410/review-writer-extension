@@ -1,12 +1,19 @@
 document.addEventListener('DOMContentLoaded', async function() {
   const generateButton = document.getElementById('generateReview');
   const regenerateButton = document.getElementById('regenerateReview');
+  const regeneratePersonaButton = document.getElementById('regeneratePersona');
   const statusDiv = document.getElementById('status');
   const productTitleDiv = document.getElementById('productTitle');
   const loadingDiv = document.getElementById('loading');
   const reviewOutputDiv = document.getElementById('reviewOutput');
   const copyButton = document.getElementById('copyReview');
   const extraDirectionsInput = document.getElementById('extraDirections');
+  
+  // Persona input fields
+  const personaAgeInput = document.getElementById('personaAge');
+  const personaGenderInput = document.getElementById('personaGender');
+  const personaOccupationInput = document.getElementById('personaOccupation');
+  const personaDescriptionInput = document.getElementById('personaDescription');
 
   // Store the current tab ID
   let currentTabId = null;
@@ -62,6 +69,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     loadingDiv.style.display = 'block';
     generateButton.disabled = true;
     regenerateButton.disabled = true;
+    regeneratePersonaButton.disabled = true;
     reviewOutputDiv.textContent = '';
     copyButton.style.display = 'none';
     regenerateButton.style.display = 'none';
@@ -72,6 +80,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     loadingDiv.style.display = 'none';
     generateButton.disabled = false;
     regenerateButton.disabled = false;
+    regeneratePersonaButton.disabled = false;
   }
 
   // Function to display error message
@@ -101,6 +110,71 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
+  // Function to update persona fields
+  function updatePersonaFields(persona) {
+    personaAgeInput.value = persona.age;
+    personaGenderInput.value = persona.gender;
+    personaOccupationInput.value = persona.occupation;
+    personaDescriptionInput.value = persona.description;
+  }
+
+  // Function to get current persona values
+  function getCurrentPersona() {
+    return {
+      age: parseInt(personaAgeInput.value),
+      gender: personaGenderInput.value,
+      occupation: personaOccupationInput.value,
+      description: personaDescriptionInput.value
+    };
+  }
+
+  // Function to generate persona
+  async function generatePersona() {
+    try {
+      showLoading();
+      statusDiv.textContent = 'Generating persona...';
+      statusDiv.className = '';
+
+      // Get product info from storage or fetch it
+      let productInfo = await getFromStorage(`productInfo_${currentTabId}`);
+      
+      if (!productInfo) {
+        productInfo = await getProductInfo();
+        if (!productInfo) {
+          throw new Error('Could not fetch product information');
+        }
+        // Save product info to storage
+        await saveToStorage(`productInfo_${currentTabId}`, productInfo);
+      }
+
+      // Send message to content script to generate persona
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      await ensureContentScriptInjected(tab.id);
+      const response = await chrome.tabs.sendMessage(tab.id, { 
+        action: 'generatePersona',
+        productInfo: productInfo
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      const persona = response.persona;
+      // Save persona to storage
+      await saveToStorage(`persona_${currentTabId}`, persona);
+      
+      // Update the persona fields
+      updatePersonaFields(persona);
+      
+      statusDiv.textContent = 'Persona generated successfully!';
+      statusDiv.className = 'success';
+    } catch (error) {
+      displayError(error.message);
+    } finally {
+      hideLoading();
+    }
+  }
+
   // Function to generate review
   async function generateReview(extraDirections = '') {
     try {
@@ -118,12 +192,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         await saveToStorage(`productInfo_${currentTabId}`, productInfo);
       }
 
+      // Get current persona
+      const persona = getCurrentPersona();
+
       // Send message to content script to generate review
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       await ensureContentScriptInjected(tab.id);
       const response = await chrome.tabs.sendMessage(tab.id, { 
         action: 'generateReview',
         productInfo: productInfo,
+        persona: persona,
         extraDirections: extraDirections
       });
       
@@ -164,6 +242,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     generateReview(extraDirectionsInput.value);
   });
 
+  // Regenerate persona button click handler
+  regeneratePersonaButton.addEventListener('click', () => {
+    generatePersona();
+  });
+
   // Check if we're on an Amazon product page and get the title
   const isProductPage = await checkAmazonProductPage();
   if (isProductPage) {
@@ -171,6 +254,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (title) {
       productTitleDiv.textContent = title;
       productTitleDiv.style.display = 'block';
+      
+      // Check if we have a stored persona for this tab
+      const storedPersona = await getFromStorage(`persona_${currentTabId}`);
+      if (storedPersona) {
+        updatePersonaFields(storedPersona);
+      } else {
+        // Generate initial persona
+        await generatePersona();
+      }
       
       // Check if we have a stored review for this tab
       const storedReview = await getFromStorage(`review_${currentTabId}`);
@@ -199,7 +291,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   chrome.tabs.onRemoved.addListener(async (tabId) => {
     if (tabId === currentTabId) {
       // Clear stored data when the tab is closed
-      await chrome.storage.local.remove([`productInfo_${tabId}`, `review_${tabId}`]);
+      await chrome.storage.local.remove([`productInfo_${tabId}`, `review_${tabId}`, `persona_${tabId}`]);
       currentTabId = null;
     }
   });
