@@ -90,6 +90,41 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.error(message);
   }
 
+  // Function to save data to storage
+  async function saveToStorage(key, data) {
+    try {
+      const storageKey = `${key}_${currentTabId}`;
+      await chrome.storage.local.set({ [storageKey]: data });
+    } catch (error) {
+      console.error(`Error saving ${key} to storage:`, error);
+    }
+  }
+
+  // Function to get data from storage
+  async function getFromStorage(key) {
+    try {
+      const storageKey = `${key}_${currentTabId}`;
+      const result = await chrome.storage.local.get(storageKey);
+      return result[storageKey];
+    } catch (error) {
+      console.error(`Error getting ${key} from storage:`, error);
+      return null;
+    }
+  }
+
+  // Function to clear storage for a tab
+  async function clearStorageForTab(tabId) {
+    try {
+      const keys = await chrome.storage.local.get(null);
+      const keysToRemove = Object.keys(keys).filter(key => key.endsWith(`_${tabId}`));
+      if (keysToRemove.length > 0) {
+        await chrome.storage.local.remove(keysToRemove);
+      }
+    } catch (error) {
+      console.error('Error clearing storage:', error);
+    }
+  }
+
   // Function to update persona fields
   function updatePersonaFields(persona) {
     personaAgeInput.value = persona.age;
@@ -115,9 +150,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       statusDiv.textContent = 'Generating persona...';
       statusDiv.className = '';
 
-      const productInfo = await getProductInfo();
+      // Get product info from storage or fetch it
+      let productInfo = await getFromStorage('productInfo');
+      
       if (!productInfo) {
-        throw new Error('Could not fetch product information');
+        productInfo = await getProductInfo();
+        if (!productInfo) {
+          throw new Error('Could not fetch product information');
+        }
+        // Save product info to storage
+        await saveToStorage('productInfo', productInfo);
       }
 
       // Send message to content script to generate persona
@@ -133,6 +175,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       const persona = response.persona;
+      // Save persona to storage
+      await saveToStorage('persona', persona);
+      
+      // Update the persona fields
       updatePersonaFields(persona);
       
       statusDiv.textContent = 'Persona generated successfully!';
@@ -149,9 +195,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
       showLoading();
 
-      const productInfo = await getProductInfo();
+      // Get product info from storage or fetch it
+      let productInfo = await getFromStorage('productInfo');
+      
       if (!productInfo) {
-        throw new Error('Could not fetch product information');
+        productInfo = await getProductInfo();
+        if (!productInfo) {
+          throw new Error('Could not fetch product information');
+        }
+        // Save product info to storage
+        await saveToStorage('productInfo', productInfo);
       }
 
       // Get current persona
@@ -172,6 +225,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       const review = response.review;
+      // Save review to storage
+      await saveToStorage('review', review);
+      
       reviewOutputDiv.textContent = review;
       copyButton.style.display = 'block';
       regenerateButton.style.display = 'block';
@@ -214,8 +270,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       productTitleDiv.textContent = title;
       productTitleDiv.style.display = 'block';
       
-      // Generate initial persona
-      await generatePersona();
+      // Check if we have a stored persona for this tab
+      const storedPersona = await getFromStorage('persona');
+      if (storedPersona) {
+        updatePersonaFields(storedPersona);
+      } else {
+        // Generate initial persona
+        await generatePersona();
+      }
+      
+      // Check if we have a stored review for this tab
+      const storedReview = await getFromStorage('review');
+      if (storedReview) {
+        reviewOutputDiv.textContent = storedReview;
+        copyButton.style.display = 'block';
+        regenerateButton.style.display = 'block';
+        statusDiv.textContent = 'Review loaded from storage';
+        statusDiv.className = 'success';
+      }
     } else {
       productTitleDiv.textContent = 'Could not fetch product title';
       productTitleDiv.style.color = 'red';
@@ -228,5 +300,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Generate button click handler
   generateButton.addEventListener('click', () => {
     generateReview(extraDirectionsInput.value);
+  });
+
+  // Listen for tab updates to clear stored data when tab is closed
+  chrome.tabs.onRemoved.addListener(async (tabId) => {
+    if (tabId === currentTabId) {
+      // Clear stored data when the tab is closed
+      await clearStorageForTab(tabId);
+      currentTabId = null;
+    }
   });
 }); 
