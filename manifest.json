@@ -20,6 +20,11 @@
       "matches": ["https://*.amazon.com/*"],
       "js": ["content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["https://*.amazon.com/review/review-your-purchases/*"],
+      "js": ["typing-simulator.js", "review-page.js"],
+      "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [{

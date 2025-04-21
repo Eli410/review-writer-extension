@@ -47,8 +47,40 @@
       margin: 10px 0;
       word-wrap: break-word;
     }
-    #reviewOutput {
+    .title-container {
+      position: relative;
       margin-top: 10px;
+    }
+    #reviewTitle {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+      white-space: pre-wrap;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 40px;
+      font-weight: bold;
+    }
+    #copyTitle {
+      position: absolute;
+      bottom: 5px;
+      right: 5px;
+      padding: 4px 8px;
+      font-size: 12px;
+      background-color: rgba(76, 175, 80, 0.8);
+      z-index: 10;
+    }
+    #copyTitle:hover {
+      background-color: rgba(76, 175, 80, 1);
+    }
+    .review-container {
+      position: relative;
+      margin-top: 10px;
+    }
+    #reviewOutput {
+      width: 100%;
       padding: 10px;
       border: 1px solid #ddd;
       border-radius: 4px;
@@ -56,6 +88,21 @@
       white-space: pre-wrap;
       max-height: 300px;
       overflow-y: auto;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 150px;
+    }
+    #copyReview {
+      position: absolute;
+      bottom: 5px;
+      right: 5px;
+      padding: 4px 8px;
+      font-size: 12px;
+      background-color: rgba(76, 175, 80, 0.8);
+      z-index: 10;
+    }
+    #copyReview:hover {
+      background-color: rgba(76, 175, 80, 1);
     }
     .loading {
       display: none;
@@ -90,6 +137,37 @@
       font-size: 14px;
       margin-top: 10px;
       font-weight: bold;
+    }
+    .aspects-section {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 10px;
+      background-color: #f9f9f9;
+    }
+    .aspects-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .aspects-title {
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .aspects-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .aspect-tag {
+      background-color: #e0f7fa;
+      color: #006064;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      display: inline-block;
+      margin-bottom: 5px;
     }
     .persona-section {
       border: 1px solid #ddd;
@@ -135,6 +213,16 @@
     <h2>Amazon Review Writer</h2>
     <div id="productTitle"></div>
     
+    <div class="aspects-section">
+      <div class="aspects-header">
+        <div class="aspects-title">Key Aspects to Focus On</div>
+        <button id="regenerateAspects">Regenerate</button>
+      </div>
+      <div class="aspects-container" id="aspectsContainer">
+        <div class="aspect-tag">Loading aspects...</div>
+      </div>
+    </div>
+    
     <div class="persona-section">
       <div class="persona-header">
         <div class="persona-title">Reviewer Persona</div>
@@ -160,12 +248,21 @@
 
     <div class="input-label">Extra Directions (Optional):</div>
     <textarea id="extraDirections" rows="3" placeholder="Add any specific instructions for the review generation..."></textarea>
-    <button id="generateReview">Generate Review</button>
     <div id="loading" class="loading"></div>
-    <div id="reviewOutput"></div>
+    
+    <div class="title-container">
+      <textarea id="reviewTitle" placeholder="Review title will appear here..."></textarea>
+      <button id="copyTitle" style="display: none;">Copy Title</button>
+    </div>
+    
+    <div class="review-container">
+      <textarea id="reviewOutput" placeholder="Generated review will appear here..."></textarea>
+      <button id="copyReview" style="display: none;">Copy Review</button>
+    </div>
+    
     <div class="button-group">
       <button id="regenerateReview" style="display: none;">Regenerate</button>
-      <button id="copyReview" style="display: none;">Copy Review</button>
+      <button id="writeReview" style="display: none;">Write Review</button>
     </div>
     <div id="status"></div>
   </div>

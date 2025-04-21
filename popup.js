@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', async function() {
-  const generateButton = document.getElementById('generateReview');
   const regenerateButton = document.getElementById('regenerateReview');
   const regeneratePersonaButton = document.getElementById('regeneratePersona');
   const regenerateAspectsButton = document.getElementById('regenerateAspects');
@@ -26,6 +25,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   let currentAspects = [];
   // Flag to track if content script is available
   let contentScriptAvailable = false;
+  // Flag to track if aspects and persona are loaded
+  let aspectsLoaded = false;
+  let personaLoaded = false;
 
   // Function to check if we're on an Amazon product page or review page
   async function checkAmazonPage() {
@@ -279,21 +281,18 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Function to show loading state
   function showLoading() {
     loadingDiv.style.display = 'block';
-    generateButton.disabled = true;
     regenerateButton.disabled = true;
     regeneratePersonaButton.disabled = true;
     regenerateAspectsButton.disabled = true;
     reviewOutputDiv.value = '';
     copyButton.style.display = 'none';
     copyTitleButton.style.display = 'none';
-    regenerateButton.style.display = 'none';
     writeReviewButton.style.display = 'none';
   }
 
   // Function to hide loading state
   function hideLoading() {
     loadingDiv.style.display = 'none';
-    generateButton.disabled = false;
     regenerateButton.disabled = false;
     regeneratePersonaButton.disabled = false;
     regenerateAspectsButton.disabled = false;
@@ -495,17 +494,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         updatePersonaFields(storedPersona);
         statusDiv.textContent = 'Persona loaded from storage';
         statusDiv.className = 'success';
+        personaLoaded = true;
         return true;
       } else {
         // No valid persona found, generate a new one
         console.log('No valid persona found, generating a new one');
         await generatePersona();
+        personaLoaded = true;
         return false;
       }
     } catch (error) {
       console.error('Error checking persona:', error);
       // Generate a new persona if there's an error
       await generatePersona();
+      personaLoaded = true;
       return false;
     }
   }
@@ -520,17 +522,20 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (storedAspects && Array.isArray(storedAspects) && storedAspects.length > 0) {
         // We have valid aspects, update the display
         updateAspectsDisplay(storedAspects);
+        aspectsLoaded = true;
         return true;
       } else {
         // No valid aspects found, generate new ones
         console.log('No valid aspects found, generating new ones');
         await generateAspects();
+        aspectsLoaded = true;
         return false;
       }
     } catch (error) {
       console.error('Error checking aspects:', error);
       // Generate new aspects if there's an error
       await generateAspects();
+      aspectsLoaded = true;
       return false;
     }
   }
@@ -748,11 +753,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   });
 
-  // Generate button click handler
-  generateButton.addEventListener('click', () => {
-    generateReview(extraDirectionsInput.value);
-  });
-
   // Regenerate persona button click handler
   regeneratePersonaButton.addEventListener('click', () => {
     generatePersona();
@@ -767,6 +767,20 @@ document.addEventListener('DOMContentLoaded', async function() {
   writeReviewButton.addEventListener('click', () => {
     openAmazonReviewPage();
   });
+
+  // Function to check if we should auto-generate a review
+  async function checkAndAutoGenerateReview() {
+    // Only auto-generate if both aspects and persona are loaded
+    if (aspectsLoaded && personaLoaded) {
+      // Check if we already have a review
+      const storedReview = await getFromStorage('review');
+      
+      if (!storedReview) {
+        // Auto-generate the review
+        await generateReview(extraDirectionsInput.value);
+      }
+    }
+  }
 
   // Check if we're on an Amazon product page or review page and get the title
   try {
@@ -820,6 +834,9 @@ document.addEventListener('DOMContentLoaded', async function() {
               
               // Check if we have a valid persona
               await checkAndLoadPersona();
+              
+              // Auto-generate the review if both aspects and persona are loaded
+              await checkAndAutoGenerateReview();
             } else {
               productTitleDiv.textContent = 'Could not fetch product title';
               productTitleDiv.style.color = 'red';
