@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', async function() {
-  const regenerateButton = document.getElementById('regenerateReview');
+  const regenerateReviewButton = document.getElementById('regenerateReview');
   const regeneratePersonaButton = document.getElementById('regeneratePersona');
   const regenerateAspectsButton = document.getElementById('regenerateAspects');
   const writeReviewButton = document.getElementById('writeReview');
@@ -281,19 +281,20 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Function to show loading state
   function showLoading() {
     loadingDiv.style.display = 'block';
-    regenerateButton.disabled = true;
+    regenerateReviewButton.disabled = true;
     regeneratePersonaButton.disabled = true;
     regenerateAspectsButton.disabled = true;
     reviewOutputDiv.value = '';
     copyButton.style.display = 'none';
     copyTitleButton.style.display = 'none';
     writeReviewButton.style.display = 'none';
+    writeReviewButton.disabled = true;
   }
 
   // Function to hide loading state
   function hideLoading() {
     loadingDiv.style.display = 'none';
-    regenerateButton.disabled = false;
+    regenerateReviewButton.disabled = false;
     regeneratePersonaButton.disabled = false;
     regenerateAspectsButton.disabled = false;
   }
@@ -672,8 +673,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Show the copy buttons
         copyButton.style.display = 'block';
         copyTitleButton.style.display = 'block';
-        regenerateButton.style.display = 'block';
-        writeReviewButton.style.display = 'block';
+        regenerateReviewButton.style.display = 'block';
+        updateWriteReviewButtonState(true);
         
         statusDiv.textContent = 'Review generated successfully!';
         statusDiv.className = 'success';
@@ -683,6 +684,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     } catch (error) {
       displayError(error.message);
+      updateWriteReviewButtonState(false);
     } finally {
       hideLoading();
     }
@@ -763,6 +765,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     generateAspects();
   });
 
+  // Regenerate review button click handler
+  regenerateReviewButton.addEventListener('click', () => {
+    generateReview(extraDirectionsInput.value);
+  });
+
   // Write Review button click handler
   writeReviewButton.addEventListener('click', () => {
     openAmazonReviewPage();
@@ -780,6 +787,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         await generateReview(extraDirectionsInput.value);
       }
     }
+  }
+
+  // Function to update write review button state
+  function updateWriteReviewButtonState(hasReview) {
+    writeReviewButton.style.display = 'block';
+    writeReviewButton.disabled = !hasReview;
   }
 
   // Check if we're on an Amazon product page or review page and get the title
@@ -809,8 +822,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             
             copyButton.style.display = 'block';
             copyTitleButton.style.display = 'block';
-            regenerateButton.style.display = 'block';
-            writeReviewButton.style.display = 'block';
+            regenerateReviewButton.style.display = 'block';
+            updateWriteReviewButtonState(true);
             statusDiv.textContent = 'Review loaded from storage';
             statusDiv.className = 'success';
             
@@ -826,8 +839,8 @@ document.addEventListener('DOMContentLoaded', async function() {
               productTitleDiv.textContent = title;
               productTitleDiv.style.display = 'block';
               
-              // Show the write review button
-              writeReviewButton.style.display = 'block';
+              // Show the write review button but disable it since there's no review
+              updateWriteReviewButtonState(false);
               
               // Check if we have valid aspects
               await checkAndLoadAspects();
