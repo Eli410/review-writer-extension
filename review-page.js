@@ -128,14 +128,17 @@ async function fillReviewForm(reviewText = null) {
 }
 
 // Try to fill the form immediately
-let filled = fillReviewForm();
-
-// If not filled, try again after a short delay (in case the page is still loading)
-if (!filled) {
-  setTimeout(() => {
-    fillReviewForm();
-  }, 1000);
-}
+let filled = false;
+setTimeout(() => {
+  filled = fillReviewForm();
+  
+  // If not filled, try again after a short delay (in case the page is still loading)
+  if (!filled) {
+    setTimeout(() => {
+      fillReviewForm();
+    }, 1000);
+  }
+}, 2000); // 2 second delay
 
 // Listen for messages from the extension
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
