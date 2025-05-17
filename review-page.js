@@ -100,12 +100,9 @@ async function fillReviewForm(reviewText = null) {
     variation: 0.3,
     pauseProbability: 0.15,
     pauseDuration: 200,
-    // New natural typing options
+    // Natural typing options
     typoProbability: 0.02, // 2% chance of typo
-    longPauseProbability: 0.01, // 2% chance of long pause
-    longPauseDuration: 1500, // 2 second long pause
-    thinkingPauseProbability: 0.005, // 1% chance of thinking pause
-    thinkingPauseDuration: 5000 // 5 second thinking pause
+    longPauseDuration: 3000 // 3 second long pause
   });
   
   // Fill the title input if it exists

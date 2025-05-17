@@ -13,10 +13,8 @@ class TypingSimulator {
     
     // New properties for natural typing
     this.typoProbability = options.typoProbability || 0.05; // 5% chance of typo
-    this.longPauseProbability = options.longPauseProbability || 0.02; // 2% chance of long pause
     this.longPauseDuration = options.longPauseDuration || 2000; // 2 second long pause
-    this.thinkingPauseProbability = options.thinkingPauseProbability || 0.01; // 1% chance of thinking pause
-    this.thinkingPauseDuration = options.thinkingPauseDuration || 5000; // 5 second thinking pause
+    this.longPausesRemaining = Math.floor(Math.random() * 3) + 1; // Random number of pauses between 1 and 3
     this.commonTypos = {
       'a': ['s', 'q', 'w'],
       'e': ['w', 'r', 'd'],
@@ -61,32 +59,22 @@ class TypingSimulator {
   }
 
   // Simulate a human pause with more variety
-  async simulatePause() {
+  async simulatePause(lastChar) {
     const random = Math.random();
-    
-    // Check if we're at the end of a word (space, punctuation, or end of text)
-    const isEndOfWord = this.currentIndex < this.currentText.length && 
-      (this.currentText[this.currentIndex] === ' ' || 
-       this.currentText[this.currentIndex] === '.' || 
-       this.currentText[this.currentIndex] === ',' || 
-       this.currentText[this.currentIndex] === '!' || 
-       this.currentText[this.currentIndex] === '?' || 
-       this.currentText[this.currentIndex] === ';' || 
-       this.currentText[this.currentIndex] === ':' || 
-       this.currentText[this.currentIndex] === '\n' ||
-       this.currentIndex === this.currentText.length - 1);
-    
-    if (isEndOfWord && random < this.thinkingPauseProbability) {
-      // Long thinking pause - only at the end of words
-      await new Promise(resolve => setTimeout(resolve, this.thinkingPauseDuration));
-    } else if (isEndOfWord && random < this.longPauseProbability) {
-      // Medium pause - only at the end of words
-      await new Promise(resolve => setTimeout(resolve, this.longPauseDuration));
-    } else if (random < this.pauseProbability) {
-      // Short pause - can happen anywhere
-      await new Promise(resolve => setTimeout(resolve, this.pauseDuration));
+    const endPunct = ['.', '!', '?'];
+
+    // 50% chance of a long pause after sentence-ending punctuation
+    if (endPunct.includes(lastChar) && random < 0.5) {
+      await new Promise(r => setTimeout(r, this.longPauseDuration));
+      return;
+    }
+
+    // Otherwise, short pause with configured probability
+    if (random < this.pauseProbability) {
+      await new Promise(r => setTimeout(r, this.pauseDuration));
     }
   }
+
 
   // Simulate clicking to focus an element
   async focusElement(element) {
@@ -240,7 +228,8 @@ class TypingSimulator {
     
     // Add the main typing delay
     await new Promise(resolve => setTimeout(resolve, this.calculateDelay()));
-    await this.simulatePause();
+    await this.simulatePause(char);
+
   }
 
   // Type a string with human-like behavior
