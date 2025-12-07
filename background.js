@@ -33,6 +33,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// Safely pull the first text part from a Gemini response
+function extractTextFromGeminiResponse(data) {
+  const candidates = data?.candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    throw new Error('No candidates returned from model');
+  }
+
+  const candidate = candidates[0];
+  const content = candidate?.content;
+
+  // Standard shape: content.parts
+  const parts = content?.parts;
+  if (Array.isArray(parts)) {
+    const textPart = parts.find(part => typeof part?.text === 'string');
+    if (textPart?.text) return textPart.text;
+  }
+
+  // Some responses can nest parts differently (e.g., content as array)
+  if (Array.isArray(content)) {
+    const nestedPartWithText = content
+      .flatMap(part => part?.parts && Array.isArray(part.parts) ? part.parts : [part])
+      .find(part => typeof part?.text === 'string');
+    if (nestedPartWithText?.text) return nestedPartWithText.text;
+  }
+
+  if (typeof candidate?.output === 'string') {
+    return candidate.output;
+  }
+
+  throw new Error('Model response missing text content');
+}
+
 // Function to generate text using Gemini API
 async function generateText(prompt) {
   try {
@@ -49,7 +81,7 @@ async function generateText(prompt) {
     
     console.log('Sending request to Gemini API...');
     
-    const apiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey, {
+    const apiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent?key=' + apiKey, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -100,9 +132,9 @@ async function generateText(prompt) {
       throw new Error('No text generated. API response format unexpected.');
     }
     
-    return data.candidates[0].content.parts[0].text;
+    return extractTextFromGeminiResponse(data);
   } catch (error) {
     console.error('Error generating text:', error);
     throw new Error(`Failed to generate text: ${error.message}`);
   }
-} 
+}
