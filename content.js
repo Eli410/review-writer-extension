@@ -117,7 +117,7 @@ IMPORTANT:
 - Return ONLY the JSON object without any markdown formatting, code blocks, or additional text.
 - Keep the description short, just 2-3 sentences about their interests and lifestyle.`;
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey, {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -326,7 +326,7 @@ Description: ${persona.description || 'Not available'}`;
 
     console.log('Sending request to Gemini API...');
     
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey, {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
