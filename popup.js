@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', async function() {
-  const regenerateButton = document.getElementById('regenerateReview');
+  const regenerateReviewButton = document.getElementById('regenerateReview');
   const regeneratePersonaButton = document.getElementById('regeneratePersona');
   const regenerateAspectsButton = document.getElementById('regenerateAspects');
   const writeReviewButton = document.getElementById('writeReview');
@@ -281,19 +281,20 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Function to show loading state
   function showLoading() {
     loadingDiv.style.display = 'block';
-    regenerateButton.disabled = true;
+    regenerateReviewButton.disabled = true;
     regeneratePersonaButton.disabled = true;
     regenerateAspectsButton.disabled = true;
     reviewOutputDiv.value = '';
     copyButton.style.display = 'none';
     copyTitleButton.style.display = 'none';
     writeReviewButton.style.display = 'none';
+    writeReviewButton.disabled = true;
   }
 
   // Function to hide loading state
   function hideLoading() {
     loadingDiv.style.display = 'none';
-    regenerateButton.disabled = false;
+    regenerateReviewButton.disabled = false;
     regeneratePersonaButton.disabled = false;
     regenerateAspectsButton.disabled = false;
   }
@@ -657,13 +658,15 @@ document.addEventListener('DOMContentLoaded', async function() {
           throw new Error(response.error);
         }
 
-        const reviewText = response.review;
+        const reviewText = response.formattedText || response.review || '';
+        const titleFromResponse = response.title || '';
         
         // Parse the review text to separate title and review
-        const { title, review } = parseReviewText(reviewText);
+        const { title, review } = parseReviewText(reviewText, titleFromResponse);
         
-        // Save review to storage
-        await saveToStorage('review', reviewText);
+        // Save review to storage in the normalized format
+        const normalizedText = `Title: ${title}\n\nReview: ${review}`;
+        await saveToStorage('review', normalizedText);
         
         // Set the review text in the textarea
         reviewOutputDiv.value = review;
@@ -672,8 +675,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Show the copy buttons
         copyButton.style.display = 'block';
         copyTitleButton.style.display = 'block';
-        regenerateButton.style.display = 'block';
-        writeReviewButton.style.display = 'block';
+        regenerateReviewButton.style.display = 'block';
+        updateWriteReviewButtonState(true);
         
         statusDiv.textContent = 'Review generated successfully!';
         statusDiv.className = 'success';
@@ -683,20 +686,37 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     } catch (error) {
       displayError(error.message);
+      updateWriteReviewButtonState(false);
     } finally {
       hideLoading();
     }
   }
 
   // Function to parse review text to separate title and review
-  function parseReviewText(text) {
+  function parseReviewText(text, fallbackTitle = '') {
     console.log('Parsing review text:', text);
     
     // Default values
-    let title = 'Product Review';
-    let review = text;
+    let title = fallbackTitle || 'Product Review';
+    let review = text || '';
     
     try {
+      // Try JSON first
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+          if (typeof parsed.title === 'string') {
+            title = parsed.title.trim();
+          }
+          if (typeof parsed.review === 'string') {
+            review = parsed.review.trim();
+          }
+          return { title, review };
+        }
+      } catch (jsonErr) {
+        // Not JSON, continue
+      }
+      
       // Try to extract title and review using the new format
       const titleMatch = text.match(/Title:\s*([^\n]+)/i);
       const reviewMatch = text.match(/Review:\s*([\s\S]+?)(?=\n\nTitle:|$)/i);
@@ -717,6 +737,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           review = paragraphs[0].trim();
         }
       }
+
+      // Strip leading label if still present
+      review = review.replace(/^Review:\s*/i, '').trim();
       
       console.log('Parsed title:', title);
       console.log('Parsed review:', review);
@@ -787,6 +810,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
+  // Function to update write review button state
+  function updateWriteReviewButtonState(hasReview) {
+    writeReviewButton.style.display = 'block';
+    writeReviewButton.disabled = !hasReview;
+  }
+
   // Check if we're on an Amazon product page or review page and get the title
   try {
     const isAmazonPage = await checkAmazonPage();
@@ -814,8 +843,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             
             copyButton.style.display = 'block';
             copyTitleButton.style.display = 'block';
-            regenerateButton.style.display = 'block';
-            writeReviewButton.style.display = 'block';
+            regenerateReviewButton.style.display = 'block';
+            updateWriteReviewButtonState(true);
             statusDiv.textContent = 'Review loaded from storage';
             statusDiv.className = 'success';
             
@@ -831,8 +860,8 @@ document.addEventListener('DOMContentLoaded', async function() {
               productTitleDiv.textContent = title;
               productTitleDiv.style.display = 'block';
               
-              // Show the write review button
-              writeReviewButton.style.display = 'block';
+              // Show the write review button but disable it since there's no review
+              updateWriteReviewButtonState(false);
               
               // Check if we have valid aspects
               await checkAndLoadAspects();

@@ -13,7 +13,6 @@ class TypingSimulator {
     
     // New properties for natural typing
     this.typoProbability = options.typoProbability || 0.05; // 5% chance of typo
-    this.longPauseProbability = options.longPauseProbability || 0.02; // 2% chance of long pause
     this.longPauseDuration = options.longPauseDuration || 2000; // 2 second long pause
     this.commonTypos = {
       'a': ['s', 'q', 'w'],
@@ -59,7 +58,7 @@ class TypingSimulator {
   }
 
   // Simulate a human pause with more variety
-  async simulatePause() {
+  async simulatePause(lastChar) {
     const random = Math.random();
     
     // Check if we're at the end of a word (space, punctuation, or end of text)
@@ -82,6 +81,7 @@ class TypingSimulator {
       await new Promise(resolve => setTimeout(resolve, this.pauseDuration));
     }
   }
+
 
   // Simulate clicking to focus an element
   async focusElement(element) {
@@ -235,7 +235,8 @@ class TypingSimulator {
     
     // Add the main typing delay
     await new Promise(resolve => setTimeout(resolve, this.calculateDelay()));
-    await this.simulatePause();
+    await this.simulatePause(char);
+
   }
 
   // Type a string with human-like behavior

@@ -111,16 +111,17 @@ Format the response as a JSON object with the following structure:
 }
 
 IMPORTANT: 
-- Return ONLY the JSON object without any markdown formatting, code blocks, or additional text.
-- Keep the description short, just 2-3 sentences about their interests and lifestyle.`;
+- Return ONLY the JSON object (no code fences, no extra text, single line JSON).
+- Ensure the JSON is valid (no trailing commas, close all quotes/braces).
+- Keep the description short (1-2 sentences, under 180 characters).`;
 
     const personaText = await generateTextViaOpenRouter({ prompt: personaPrompt });
     
     // Clean up the response text to handle potential markdown formatting
     const cleanedText = personaText
-      .replace(/```json\s*/g, '')  // Remove ```json
-      .replace(/```\s*/g, '')      // Remove closing ```
-      .trim();                     // Remove extra whitespace
+      .replace(/```json\s*/gi, '')  // Remove ```json
+      .replace(/```\s*/g, '')       // Remove closing ```
+      .trim();                      // Remove extra whitespace
     
     try {
       return JSON.parse(cleanedText);
@@ -240,6 +241,7 @@ Description: ${persona.description || 'Not available'}`;
     const finalUserPrompt = extraDirections 
       ? `${userPrompt}\n\nAdditional Instructions:\n${extraDirections}`
       : userPrompt;
+    const promptText = `${systemPrompt}\n\nWrite a concise Amazon-style product review using the reviewer persona below.\n\n${finalUserPrompt}\n\nOutput strictly as JSON on a single line with this shape (no extra text): {"title":"<concise headline>","review":"<full review body without leading labels>"}`;
 
     console.log('Sending request to background script (OpenRouter)...');
     const reviewText = await generateTextViaOpenRouter({
@@ -270,8 +272,12 @@ Description: ${persona.description || 'Not available'}`;
         return `Review: ${reviewText}\n\nTitle: Product Review`;
       }
     }
-    
-    return reviewText;
+
+    const title = (parsed && typeof parsed.title === 'string') ? parsed.title.trim() : 'Product Review';
+    const body = (parsed && typeof parsed.review === 'string') ? parsed.review.trim() : '';
+
+    const formattedText = `Title: ${title}\n\nReview: ${body}`;
+    return { title, review: body, formattedText };
   } catch (error) {
     console.error('Error generating review:', error);
     throw new Error(`Failed to generate review: ${error.message}`);
@@ -311,7 +317,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const extraDirections = request.extraDirections || '';
     
     generateReview(productInfo, persona, extraDirections)
-      .then(review => sendResponse({ review }))
+      .then(result => sendResponse(result))
       .catch(error => sendResponse({ error: error.message }));
     return true; // Will respond asynchronously
   }

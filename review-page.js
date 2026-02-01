@@ -17,9 +17,25 @@ function parseReviewText(text) {
   
   // Default values
   let title = 'Product Review';
-  let review = text;
+  let review = text || '';
   
   try {
+    // Try JSON first
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.title === 'string') {
+          title = parsed.title.trim();
+        }
+        if (typeof parsed.review === 'string') {
+          review = parsed.review.trim();
+        }
+        return { title, review };
+      }
+    } catch (jsonErr) {
+      // Not JSON, continue
+    }
+    
     // Try to extract title and review using the format
     const titleMatch = text.match(/Title:\s*([^\n]+)/i);
     const reviewMatch = text.match(/Review:\s*([\s\S]+?)(?=\n\nTitle:|$)/i);
@@ -40,6 +56,9 @@ function parseReviewText(text) {
         review = paragraphs[0].trim();
       }
     }
+    
+    // Strip leading label if still present
+    review = review.replace(/^Review:\s*/i, '').trim();
     
     console.log('Parsed title:', title);
     console.log('Parsed review:', review);
@@ -100,7 +119,7 @@ async function fillReviewForm(reviewText = null) {
     variation: 0.3,
     pauseProbability: 0.15,
     pauseDuration: 200,
-    // New natural typing options
+    // Natural typing options
     typoProbability: 0.02, // 2% chance of typo
     longPauseProbability: 0.05, // 2% chance of long pause
     longPauseDuration: 1500, // 2 second long pause
@@ -126,14 +145,17 @@ async function fillReviewForm(reviewText = null) {
 }
 
 // Try to fill the form immediately
-let filled = fillReviewForm();
-
-// If not filled, try again after a short delay (in case the page is still loading)
-if (!filled) {
-  setTimeout(() => {
-    fillReviewForm();
-  }, 1000);
-}
+let filled = false;
+setTimeout(() => {
+  filled = fillReviewForm();
+  
+  // If not filled, try again after a short delay (in case the page is still loading)
+  if (!filled) {
+    setTimeout(() => {
+      fillReviewForm();
+    }, 1000);
+  }
+}, 2000); // 2 second delay
 
 // Listen for messages from the extension
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
