@@ -1,6 +1,6 @@
 # Amazon Review Writer Chrome Extension
 
-A Chrome extension that automatically generates product reviews for Amazon products using OpenRouter (model: `google/gemini-2.5-flash-lite`). This extension helps users create detailed, honest reviews by analyzing product information and generating well-structured content.
+A Chrome extension that automatically generates product reviews for Amazon products using OpenRouter (model: `anthropic/claude-haiku-4.5`). This extension helps users create detailed, honest reviews by analyzing product information and generating well-structured content.
 
 ## Features
 

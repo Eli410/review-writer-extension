@@ -140,7 +140,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       messages.push({ role: 'user', content: [{ type: 'text', text: prompt }] });
 
       const text = await openRouterChatCompletion({
-        model: 'google/gemini-2.5-flash-lite',
+        model: 'anthropic/claude-haiku-4.5',
         messages,
       });
       sendResponse({ text });

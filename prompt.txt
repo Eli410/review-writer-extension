@@ -11,7 +11,9 @@ Special guidelines for medicines or health supplements:
 
 **Output Format (strictly follow this structure):**  
 ```
-Review: <Your review here>
+Review: <Paragraph 1>
+
+<Paragraph 2>
 
 Title: <Your neutral and brief title here>
 ```

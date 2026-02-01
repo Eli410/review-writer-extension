@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Amazon Review Writer",
   "version": "1.0",
-  "description": "Automatically generates product reviews for Amazon products using OpenRouter (Gemini Flash Lite 2.5)",
+  "description": "Automatically generates product reviews for Amazon products using OpenRouter (Claude Haiku 4.5)",
   "permissions": [
     "activeTab",
     "scripting",

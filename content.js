@@ -88,7 +88,7 @@ async function generateTextViaOpenRouter({ prompt, systemPrompt = '', systemProm
   return response.text;
 }
 
-// Function to generate a persona using OpenRouter (Gemini Flash Lite 2.5)
+// Function to generate a persona using OpenRouter (Claude Haiku 4.5)
 async function generatePersona(productInfo) {
   try {
     const personaPrompt = `Based on this product, create a realistic persona of someone who would likely buy and review it. Include their age, gender, occupation, and a brief description of their interests/lifestyle that would make them likely to buy this product.
@@ -218,7 +218,7 @@ async function generateAspects(productInfo) {
   }
 }
 
-// Function to generate review using OpenRouter (Gemini Flash Lite 2.5)
+// Function to generate review using OpenRouter (Claude Haiku 4.5)
 async function generateReview(productInfo, persona, extraDirections = '') {
   try {
     // Create the user prompt with product information and persona
