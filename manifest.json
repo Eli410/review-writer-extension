@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Amazon Review Writer",
   "version": "1.0",
-  "description": "Automatically generates product reviews for Amazon products using Gemini AI",
+  "description": "Automatically generates product reviews for Amazon products using OpenRouter (Gemini Flash Lite 2.5)",
   "permissions": [
     "activeTab",
     "scripting",
@@ -10,7 +10,8 @@
     "storage"
   ],
   "host_permissions": [
-    "https://*.amazon.com/*"
+    "https://*.amazon.com/*",
+    "https://openrouter.ai/*"
   ],
   "action": {
     "default_popup": "popup.html"
@@ -27,10 +28,7 @@
       "run_at": "document_end"
     }
   ],
-  "web_accessible_resources": [{
-    "resources": ["key.txt", "prompt.txt"],
-    "matches": ["https://*.amazon.com/*"]
-  }],
+  
   "background": {
     "service_worker": "background.js"
   }

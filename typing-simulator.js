@@ -14,7 +14,6 @@ class TypingSimulator {
     // New properties for natural typing
     this.typoProbability = options.typoProbability || 0.05; // 5% chance of typo
     this.longPauseDuration = options.longPauseDuration || 2000; // 2 second long pause
-    this.longPausesRemaining = Math.floor(Math.random() * 3) + 1; // Random number of pauses between 1 and 3
     this.commonTypos = {
       'a': ['s', 'q', 'w'],
       'e': ['w', 'r', 'd'],
@@ -61,17 +60,25 @@ class TypingSimulator {
   // Simulate a human pause with more variety
   async simulatePause(lastChar) {
     const random = Math.random();
-    const endPunct = ['.', '!', '?'];
-
-    // 50% chance of a long pause after sentence-ending punctuation
-    if (endPunct.includes(lastChar) && random < 0.5) {
-      await new Promise(r => setTimeout(r, this.longPauseDuration));
-      return;
-    }
-
-    // Otherwise, short pause with configured probability
-    if (random < this.pauseProbability) {
-      await new Promise(r => setTimeout(r, this.pauseDuration));
+    
+    // Check if we're at the end of a word (space, punctuation, or end of text)
+    const isEndOfWord = this.currentIndex < this.currentText.length && 
+      (this.currentText[this.currentIndex] === ' ' || 
+       this.currentText[this.currentIndex] === '.' || 
+       this.currentText[this.currentIndex] === ',' || 
+       this.currentText[this.currentIndex] === '!' || 
+       this.currentText[this.currentIndex] === '?' || 
+       this.currentText[this.currentIndex] === ';' || 
+       this.currentText[this.currentIndex] === ':' || 
+       this.currentText[this.currentIndex] === '\n' ||
+       this.currentIndex === this.currentText.length - 1);
+    
+    if (isEndOfWord && random < this.longPauseProbability) {
+      // Medium pause - only at the end of words
+      await new Promise(resolve => setTimeout(resolve, this.longPauseDuration));
+    } else if (random < this.pauseProbability) {
+      // Short pause - can happen anywhere
+      await new Promise(resolve => setTimeout(resolve, this.pauseDuration));
     }
   }
 

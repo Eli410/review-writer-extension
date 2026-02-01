@@ -71,61 +71,26 @@ function extractAsin() {
   return null;
 }
 
-// Function to read file content
-async function readFile(filePath) {
-  try {
-    const response = await fetch(chrome.runtime.getURL(filePath));
-    if (!response.ok) {
-      throw new Error(`Failed to read ${filePath}: ${response.status} ${response.statusText}`);
-    }
-    return await response.text();
-  } catch (error) {
-    console.error(`Error reading ${filePath}:`, error);
-    throw new Error(`Failed to read ${filePath}: ${error.message}`);
+async function generateTextViaOpenRouter({ prompt, systemPrompt = '', systemPromptFile = false }) {
+  const response = await chrome.runtime.sendMessage({
+    action: 'generateText',
+    prompt,
+    systemPrompt,
+    systemPromptFile,
+  });
+
+  if (response?.error) {
+    throw new Error(response.error);
   }
+  if (!response?.text) {
+    throw new Error('No text received from background script');
+  }
+  return response.text;
 }
 
-// Safely pull the first text part from a Gemini response
-function extractTextFromGeminiResponse(data) {
-  const candidates = data?.candidates;
-  if (!Array.isArray(candidates) || candidates.length === 0) {
-    throw new Error('No candidates returned from model');
-  }
-
-  const candidate = candidates[0];
-  const content = candidate?.content;
-
-  // Standard shape: content.parts
-  const parts = content?.parts;
-  if (Array.isArray(parts)) {
-    const textPart = parts.find(part => typeof part?.text === 'string');
-    if (textPart?.text) return textPart.text;
-  }
-
-  // Some responses can nest parts differently (e.g., content as array)
-  if (Array.isArray(content)) {
-    const nestedPartWithText = content
-      .flatMap(part => part?.parts && Array.isArray(part.parts) ? part.parts : [part])
-      .find(part => typeof part?.text === 'string');
-    if (nestedPartWithText?.text) return nestedPartWithText.text;
-  }
-
-  if (typeof candidate?.output === 'string') {
-    return candidate.output;
-  }
-
-  throw new Error('Model response missing text content');
-}
-
-// Function to generate a persona using Gemini API
+// Function to generate a persona using OpenRouter (Gemini Flash Lite 2.5)
 async function generatePersona(productInfo) {
   try {
-    const apiKey = await readFile('key.txt');
-    
-    if (!apiKey) {
-      throw new Error('Missing API key. Please check key.txt file.');
-    }
-
     const personaPrompt = `Based on this product, create a realistic persona of someone who would likely buy and review it. Include their age, gender, occupation, and a brief description of their interests/lifestyle that would make them likely to buy this product.
 
 Product Information:
@@ -150,58 +115,7 @@ IMPORTANT:
 - Ensure the JSON is valid (no trailing commas, close all quotes/braces).
 - Keep the description short (1-2 sentences, under 180 characters).`;
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent?key=' + apiKey, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: personaPrompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          }
-        ]
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API Error Response:', errorText);
-      throw new Error(`API request failed with status ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log('Persona API Response:', data);
-    
-    if (!data.candidates || data.candidates.length === 0) {
-      throw new Error('No persona generated. API response format unexpected.');
-    }
-    
-    const personaText = extractTextFromGeminiResponse(data);
+    const personaText = await generateTextViaOpenRouter({ prompt: personaPrompt });
     
     // Clean up the response text to handle potential markdown formatting
     const cleanedText = personaText
@@ -251,25 +165,10 @@ async function generateAspects(productInfo) {
     IMPORTANT: Return ONLY the JSON array without any markdown formatting, code blocks, or additional text.`;
     
     console.log('Sending prompt to background script:', prompt);
-    
-    // Send the prompt to the background script
-    const response = await chrome.runtime.sendMessage({
-      action: 'generateText',
-      prompt: prompt
-    });
-    
-    console.log('Received response from background script:', response);
-    
-    if (response.error) {
-      throw new Error(response.error);
-    }
-    
-    if (!response.text) {
-      throw new Error('No text received from background script');
-    }
+    const text = await generateTextViaOpenRouter({ prompt });
     
     // Clean up the response text to handle potential markdown formatting
-    const cleanedText = response.text
+    const cleanedText = text
       .replace(/```json\s*/g, '')  // Remove ```json
       .replace(/```\s*/g, '')      // Remove closing ```
       .trim();                     // Remove extra whitespace
@@ -294,7 +193,7 @@ async function generateAspects(productInfo) {
       return aspects;
     } catch (parseError) {
       console.error('Failed to parse aspects JSON:', parseError);
-      console.error('Raw text:', response.text);
+      console.error('Raw text:', text);
       console.error('Cleaned text:', cleanedText);
       
       // Try to extract array from the text using regex
@@ -319,23 +218,9 @@ async function generateAspects(productInfo) {
   }
 }
 
-// Function to generate review using Gemini API
+// Function to generate review using OpenRouter (Gemini Flash Lite 2.5)
 async function generateReview(productInfo, persona, extraDirections = '') {
   try {
-    // Read API key and system prompt
-    const [apiKey, systemPrompt] = await Promise.all([
-      readFile('key.txt'),
-      readFile('prompt.txt')
-    ]);
-
-    if (!apiKey) {
-      throw new Error('Missing API key. Please check key.txt file.');
-    }
-    
-    if (!systemPrompt) {
-      throw new Error('Missing system prompt. Please check prompt.txt file.');
-    }
-
     // Create the user prompt with product information and persona
     const userPrompt = `Product Information:
 Title: ${productInfo.title || 'Not available'}
@@ -358,73 +243,34 @@ Description: ${persona.description || 'Not available'}`;
       : userPrompt;
     const promptText = `${systemPrompt}\n\nWrite a concise Amazon-style product review using the reviewer persona below.\n\n${finalUserPrompt}\n\nOutput strictly as JSON on a single line with this shape (no extra text): {"title":"<concise headline>","review":"<full review body without leading labels>"}`;
 
-    console.log('Sending request to Gemini API...');
-    
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent?key=' + apiKey, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: promptText
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          }
-        ]
-      }),
+    console.log('Sending request to background script (OpenRouter)...');
+    const reviewText = await generateTextViaOpenRouter({
+      prompt: finalUserPrompt,
+      // system prompt is loaded from prompt.txt by the background service worker
+      systemPrompt: '',
+      systemPromptFile: true
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API Error Response:', errorText);
-      throw new Error(`API request failed with status ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log('API Response:', data);
     
-    if (!data.candidates || data.candidates.length === 0) {
-      throw new Error('No review generated. API response format unexpected.');
-    }
-    
-    const reviewText = extractTextFromGeminiResponse(data);
-
-    // Clean markdown fences if present
-    const cleanedText = reviewText
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim();
-
-    let parsed;
-    try {
-      parsed = JSON.parse(cleanedText);
-    } catch (parseError) {
-      console.error('Failed to parse review JSON:', parseError, 'Raw text:', reviewText, 'Cleaned:', cleanedText);
-      throw new Error('Failed to parse review JSON. Please try regenerating.');
+    // Ensure the review text has the correct format
+    // If it doesn't have "Review:" and "Title:" sections, add them
+    if (!reviewText.includes('Review:') || !reviewText.includes('Title:')) {
+      console.log('Review text does not have the expected format, adding format markers');
+      
+      // Split the text into paragraphs
+      const paragraphs = reviewText.split('\n\n').filter(p => p.trim());
+      
+      if (paragraphs.length >= 2) {
+        // Assume the first paragraph is the review and the second is the title
+        const formattedText = `Review: ${paragraphs[0]}\n\nTitle: ${paragraphs[1]}`;
+        return formattedText;
+      } else if (paragraphs.length === 1) {
+        // If there's only one paragraph, assume it's the review and generate a generic title
+        const formattedText = `Review: ${paragraphs[0]}\n\nTitle: Product Review`;
+        return formattedText;
+      } else {
+        // If there are no paragraphs, return the original text with format markers
+        return `Review: ${reviewText}\n\nTitle: Product Review`;
+      }
     }
 
     const title = (parsed && typeof parsed.title === 'string') ? parsed.title.trim() : 'Product Review';
