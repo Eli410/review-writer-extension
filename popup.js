@@ -763,6 +763,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     generateAspects();
   });
 
+  // Regenerate review button click handler
+  regenerateButton.addEventListener('click', () => {
+    generateReview(extraDirectionsInput.value);
+  });
+
   // Write Review button click handler
   writeReviewButton.addEventListener('click', () => {
     openAmazonReviewPage();

@@ -15,8 +15,6 @@ class TypingSimulator {
     this.typoProbability = options.typoProbability || 0.05; // 5% chance of typo
     this.longPauseProbability = options.longPauseProbability || 0.02; // 2% chance of long pause
     this.longPauseDuration = options.longPauseDuration || 2000; // 2 second long pause
-    this.thinkingPauseProbability = options.thinkingPauseProbability || 0.01; // 1% chance of thinking pause
-    this.thinkingPauseDuration = options.thinkingPauseDuration || 5000; // 5 second thinking pause
     this.commonTypos = {
       'a': ['s', 'q', 'w'],
       'e': ['w', 'r', 'd'],
@@ -76,10 +74,7 @@ class TypingSimulator {
        this.currentText[this.currentIndex] === '\n' ||
        this.currentIndex === this.currentText.length - 1);
     
-    if (isEndOfWord && random < this.thinkingPauseProbability) {
-      // Long thinking pause - only at the end of words
-      await new Promise(resolve => setTimeout(resolve, this.thinkingPauseDuration));
-    } else if (isEndOfWord && random < this.longPauseProbability) {
+    if (isEndOfWord && random < this.longPauseProbability) {
       // Medium pause - only at the end of words
       await new Promise(resolve => setTimeout(resolve, this.longPauseDuration));
     } else if (random < this.pauseProbability) {
