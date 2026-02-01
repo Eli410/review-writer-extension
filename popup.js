@@ -787,7 +787,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
 
   // Regenerate review button click handler
-  regenerateButton.addEventListener('click', () => {
+  regenerateReviewButton.addEventListener('click', () => {
     generateReview(extraDirectionsInput.value);
   });
 
