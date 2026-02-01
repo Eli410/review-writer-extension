@@ -241,40 +241,40 @@ Description: ${persona.description || 'Not available'}`;
     const finalUserPrompt = extraDirections 
       ? `${userPrompt}\n\nAdditional Instructions:\n${extraDirections}`
       : userPrompt;
-    const promptText = `${systemPrompt}\n\nWrite a concise Amazon-style product review using the reviewer persona below.\n\n${finalUserPrompt}\n\nOutput strictly as JSON on a single line with this shape (no extra text): {"title":"<concise headline>","review":"<full review body without leading labels>"}`;
+    const requestPrompt = `${finalUserPrompt}\n\nIMPORTANT: Return ONLY valid JSON on a single line with exactly this shape (no code fences, no extra keys, no extra text): {"title":"<concise headline>","review":"<full review body>"}`
 
     console.log('Sending request to background script (OpenRouter)...');
     const reviewText = await generateTextViaOpenRouter({
-      prompt: finalUserPrompt,
+      prompt: requestPrompt,
       // system prompt is loaded from prompt.txt by the background service worker
       systemPrompt: '',
       systemPromptFile: true
     });
     
-    // Ensure the review text has the correct format
-    // If it doesn't have "Review:" and "Title:" sections, add them
-    if (!reviewText.includes('Review:') || !reviewText.includes('Title:')) {
-      console.log('Review text does not have the expected format, adding format markers');
-      
-      // Split the text into paragraphs
-      const paragraphs = reviewText.split('\n\n').filter(p => p.trim());
-      
-      if (paragraphs.length >= 2) {
-        // Assume the first paragraph is the review and the second is the title
-        const formattedText = `Review: ${paragraphs[0]}\n\nTitle: ${paragraphs[1]}`;
-        return formattedText;
-      } else if (paragraphs.length === 1) {
-        // If there's only one paragraph, assume it's the review and generate a generic title
-        const formattedText = `Review: ${paragraphs[0]}\n\nTitle: Product Review`;
-        return formattedText;
+    const cleanedText = String(reviewText || '')
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
+      .trim();
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(cleanedText);
+    } catch (parseError) {
+      // Try to extract a JSON object from the response
+      const objMatch = cleanedText.match(/\{[\s\S]*\}/);
+      if (objMatch?.[0]) {
+        parsed = JSON.parse(objMatch[0]);
       } else {
-        // If there are no paragraphs, return the original text with format markers
-        return `Review: ${reviewText}\n\nTitle: Product Review`;
+        throw new Error('Failed to parse review JSON. Please try regenerating.');
       }
     }
 
-    const title = (parsed && typeof parsed.title === 'string') ? parsed.title.trim() : 'Product Review';
-    const body = (parsed && typeof parsed.review === 'string') ? parsed.review.trim() : '';
+    const title = (parsed && typeof parsed.title === 'string' && parsed.title.trim())
+      ? parsed.title.trim()
+      : 'Product Review';
+    const body = (parsed && typeof parsed.review === 'string')
+      ? parsed.review.trim()
+      : '';
 
     const formattedText = `Title: ${title}\n\nReview: ${body}`;
     return { title, review: body, formattedText };
