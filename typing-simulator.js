@@ -13,6 +13,7 @@ class TypingSimulator {
     
     // New properties for natural typing
     this.typoProbability = options.typoProbability || 0.05; // 5% chance of typo
+    this.longPauseProbability = options.longPauseProbability ?? 0.05; // chance of long pause at end of word
     this.longPauseDuration = options.longPauseDuration || 2000; // 2 second long pause
     this.commonTypos = {
       'a': ['s', 'q', 'w'],

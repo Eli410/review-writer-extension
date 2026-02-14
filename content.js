@@ -88,37 +88,20 @@ async function generateTextViaOpenRouter({ prompt, systemPrompt = '', systemProm
   return response.text;
 }
 
-// Function to generate a persona using OpenRouter (Claude Haiku 4.5)
+// Function to generate a persona
 async function generatePersona(productInfo) {
   try {
-    const personaPrompt = `Based on this product, create a realistic persona of someone who would likely buy and review it. Include their age, gender, occupation, and a brief description of their interests/lifestyle that would make them likely to buy this product.
-
-Product Information:
-Title: ${productInfo.title || 'Not available'}
-Description: ${productInfo.description || 'Not available'}
-Category: ${productInfo.category || 'Not available'}
-Features: ${productInfo.features && productInfo.features.length > 0 ? productInfo.features.join(', ') : 'Not available'}
-Price: ${productInfo.price || 'Not available'}
-Rating: ${productInfo.rating || 'Not available'}
-Number of Reviews: ${productInfo.reviewsCount || 'Not available'}
-
-Format the response as a JSON object with the following structure:
-{
-  "age": number,
-  "gender": string,
-  "occupation": string,
-  "description": string
-}
-
-IMPORTANT: 
-- Return ONLY the JSON object (no code fences, no extra text, single line JSON).
-- Ensure the JSON is valid (no trailing commas, close all quotes/braces).
-- Keep the description short (1-2 sentences, under 180 characters).`;
-
+    const personaPrompt =
+      typeof buildPersonaPrompt === 'function'
+        ? buildPersonaPrompt(productInfo)
+        : (window.buildPersonaPrompt && window.buildPersonaPrompt(productInfo)) ||
+          `Based on this product, create a realistic persona. Product: ${productInfo.title || 'N/A'}. Return JSON: { "age", "gender", "occupation", "description" }.`;
     const personaText = await generateTextViaOpenRouter({ prompt: personaPrompt });
     
     // Clean up the response text to handle potential markdown formatting
+    // Strip <think>...</think> blocks (e.g. GLM 4.x chain-of-thought) so only final output remains
     const cleanedText = personaText
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
       .replace(/```json\s*/gi, '')  // Remove ```json
       .replace(/```\s*/g, '')       // Remove closing ```
       .trim();                      // Remove extra whitespace
@@ -140,41 +123,23 @@ IMPORTANT:
 // Function to generate key aspects
 async function generateAspects(productInfo) {
   try {
-    console.log('Generating aspects for product:', productInfo);
-    
-    // Create a prompt for the aspects generation
-    const prompt = `Generate 5-8 key aspects that buyers would look for when purchasing and reviewing this product:
-    
-    Product Title: ${productInfo.title || 'Not available'}
-    Product Category: ${productInfo.category || 'Not available'}
-    Product Description: ${productInfo.description || 'Not available'}
-    Product Features: ${productInfo.features && productInfo.features.length > 0 ? productInfo.features.join(', ') : 'Not available'}
-    Product Price: ${productInfo.price || 'Not available'}
-    Product Rating: ${productInfo.rating || 'Not available'}
-    Number of Reviews: ${productInfo.reviewsCount || 'Not available'}
-    
-    The aspects should be:
-    1. Relevant to the product category and type
-    2. Important to potential buyers
-    3. Specific enough to guide a detailed review
-    4. Written as short phrases (1-3 words each)
-    
-    Format the response as a JSON array of strings, for example:
-    ["Durability", "Ease of Use", "Value for Money"]
-    
-    IMPORTANT: Return ONLY the JSON array without any markdown formatting, code blocks, or additional text.`;
-    
-    console.log('Sending prompt to background script:', prompt);
+    const prompt =
+      typeof buildAspectsPrompt === 'function'
+        ? buildAspectsPrompt(productInfo)
+        : (window.buildAspectsPrompt && window.buildAspectsPrompt(productInfo)) ||
+          `Generate 5-8 key aspects for: ${productInfo.title || 'product'}. Return JSON array of strings only.`;
     const text = await generateTextViaOpenRouter({ prompt });
-    
+
     // Clean up the response text to handle potential markdown formatting
+    // Strip <think>...</think> blocks (e.g. GLM 4.x chain-of-thought) so only final output remains
     const cleanedText = text
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
       .replace(/```json\s*/g, '')  // Remove ```json
       .replace(/```\s*/g, '')      // Remove closing ```
       .trim();                     // Remove extra whitespace
-    
+
     console.log('Cleaned text for JSON parsing:', cleanedText);
-    
+
     try {
       // Parse the response as JSON
       const aspects = JSON.parse(cleanedText);
@@ -188,28 +153,30 @@ async function generateAspects(productInfo) {
       if (!aspects.every(aspect => typeof aspect === 'string')) {
         throw new Error('Response contains non-string elements');
       }
-      
-      console.log('Successfully parsed aspects:', aspects);
-      return aspects;
+      // Enforce max 2 words per aspect
+      const trimmed = aspects.map(a => a.trim().split(/\s+/).slice(0, 2).join(' ')).filter(Boolean);
+      console.log('Successfully parsed aspects:', trimmed);
+      return trimmed;
     } catch (parseError) {
       console.error('Failed to parse aspects JSON:', parseError);
       console.error('Raw text:', text);
       console.error('Cleaned text:', cleanedText);
-      
+
       // Try to extract array from the text using regex
       const arrayMatch = cleanedText.match(/\[(.*)\]/s);
       if (arrayMatch && arrayMatch[0]) {
         try {
           const extractedArray = JSON.parse(arrayMatch[0]);
           if (Array.isArray(extractedArray) && extractedArray.every(aspect => typeof aspect === 'string')) {
-            console.log('Successfully extracted aspects using regex:', extractedArray);
-            return extractedArray;
+            const trimmed = extractedArray.map(a => a.trim().split(/\s+/).slice(0, 2).join(' ')).filter(Boolean);
+            console.log('Successfully extracted aspects using regex:', trimmed);
+            return trimmed;
           }
         } catch (extractError) {
           console.error('Failed to parse extracted array:', extractError);
         }
       }
-      
+
       throw new Error('Failed to parse aspects JSON. Please try regenerating.');
     }
   } catch (error) {
@@ -227,7 +194,6 @@ Title: ${productInfo.title || 'Not available'}
 Description: ${productInfo.description || 'Not available'}
 Category: ${productInfo.category || 'Not available'}
 Features: ${productInfo.features && productInfo.features.length > 0 ? productInfo.features.join(', ') : 'Not available'}
-Price: ${productInfo.price || 'Not available'}
 Rating: ${productInfo.rating || 'Not available'}
 Number of Reviews: ${productInfo.reviewsCount || 'Not available'}
 
@@ -238,10 +204,11 @@ Occupation: ${persona.occupation || 'Not available'}
 Description: ${persona.description || 'Not available'}`;
     
     // Add extra directions to the user prompt if provided
-    const finalUserPrompt = extraDirections 
-      ? `${userPrompt}\n\nAdditional Instructions:\n${extraDirections}`
-      : userPrompt;
-    const requestPrompt = `${finalUserPrompt}\n\nIMPORTANT: Return ONLY valid JSON on a single line with exactly this shape (no code fences, no extra keys, no extra text): {"title":"<concise headline>","review":"<full review body>"}`
+    const noMedicalLine = 'Do not mention medical, health, or supplement effects or efficacy.';
+    const finalUserPrompt = extraDirections
+      ? `${userPrompt}\n\nAdditional Instructions:\n${extraDirections}\n${noMedicalLine}`
+      : `${userPrompt}\n\n${noMedicalLine}`;
+    const requestPrompt = `${finalUserPrompt}\n\nIMPORTANT: Return ONLY valid JSON on a single line with exactly this shape (no code fences, no extra keys, no extra text): {"title":"<concise headline>","review":"<full review body>"}`;
 
     console.log('Sending request to background script (OpenRouter)...');
     const reviewText = await generateTextViaOpenRouter({
@@ -251,7 +218,9 @@ Description: ${persona.description || 'Not available'}`;
       systemPromptFile: true
     });
     
+    // Strip <think>...</think> blocks (e.g. GLM 4.x chain-of-thought) so only final output remains
     const cleanedText = String(reviewText || '')
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
       .replace(/```json\s*/gi, '')
       .replace(/```\s*/g, '')
       .trim();

@@ -1,3 +1,5 @@
+importScripts('config.js');
+
 // Listen for tab removal events
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   // This event is triggered when a tab is closed
@@ -42,17 +44,22 @@ function parseDotEnv(envText) {
   return result;
 }
 
-async function readOpenRouterApiKey() {
+let _envCache = null;
+async function readEnv() {
+  if (_envCache) return _envCache;
   const response = await fetch(chrome.runtime.getURL('.env'));
   if (!response.ok) {
     throw new Error(`Failed to read .env: ${response.status} ${response.statusText}`);
   }
   const envText = await response.text();
-  const env = parseDotEnv(envText);
+  _envCache = parseDotEnv(envText);
+  return _envCache;
+}
+
+async function readOpenRouterApiKey() {
+  const env = await readEnv();
   const apiKey = (env.OPENROUTER_API_KEY || '').trim();
-  if (!apiKey) {
-    throw new Error('Missing OPENROUTER_API_KEY in .env');
-  }
+  if (!apiKey) throw new Error('Missing OPENROUTER_API_KEY in .env');
   return apiKey;
 }
 
@@ -90,7 +97,7 @@ function extractAssistantTextFromOpenRouterResponse(data) {
   return null;
 }
 
-async function openRouterChatCompletion({ model, messages, temperature = 0.7, top_p = 0.95, max_tokens = 1024 }) {
+async function openRouterChatCompletion({ model, messages, temperature = 0.7, top_p = 0.95, max_tokens = 2048 }) {
   const apiKey = await readOpenRouterApiKey();
   const manifest = chrome.runtime.getManifest();
 
@@ -125,6 +132,18 @@ async function openRouterChatCompletion({ model, messages, temperature = 0.7, to
   return text;
 }
 
+async function getSettings() {
+  const { settings } = await chrome.storage.sync.get('settings');
+  const provider = 'openrouter';
+  const cfg = typeof PROVIDER_CONFIG !== 'undefined' ? PROVIDER_CONFIG : null;
+  const defaultModel =
+    cfg?.openrouter?.defaultModel ||
+    (cfg?.openrouter?.models?.[0]?.id) ||
+    'anthropic/claude-haiku-4.5';
+  const model = settings?.model || defaultModel;
+  return { provider, model };
+}
+
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generateText') {
@@ -136,16 +155,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const messages = [];
       const systemPrompt = systemPromptFile ? await readSystemPrompt() : inlineSystemPrompt;
       if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-      // Match OpenRouter's multimodal-capable "content parts" format (text-only here).
       messages.push({ role: 'user', content: [{ type: 'text', text: prompt }] });
 
-      const text = await openRouterChatCompletion({
-        model: 'anthropic/claude-haiku-4.5',
-        messages,
-      });
+      const { model } = await getSettings();
+      const text = await openRouterChatCompletion({ model, messages });
       sendResponse({ text });
     })().catch((error) => sendResponse({ error: error.message }));
 
-    return true; // async
+    return true;
   }
 });

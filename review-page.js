@@ -71,8 +71,22 @@ function parseReviewText(text) {
   }
 }
 
+// Select the 5-star rating on the Amazon review form (in-context RYP)
+function selectFiveStarRating() {
+  const fiveStar =
+    document.querySelector('span[aria-label="select to rate item five star."]') ||
+    document.querySelector('.in-context-ryp__form-field--starRating .in-context-ryp__form-field--starRating-single:nth-child(5)');
+  if (fiveStar) {
+    fiveStar.click();
+  } else {
+    console.log('Star rating (5 stars) not found; continuing without setting rating.');
+  }
+}
+
 // Function to fill the review form with stored review
 async function fillReviewForm(reviewText = null) {
+  selectFiveStarRating();
+
   // Find the review title input element
   const reviewTitleInput = document.querySelector('#reviewTitle');
   // Find the review textarea element
@@ -91,9 +105,9 @@ async function fillReviewForm(reviewText = null) {
     const asin = extractAsinFromUrl();
     
     if (asin) {
-      // Try to get the stored review from storage
       try {
-        const storageKey = `review_${asin}`;
+        const storageKey =
+          typeof getStorageKey === 'function' ? getStorageKey('review', asin) : `review_${asin}`;
         const result = await chrome.storage.local.get(storageKey);
         const storedReview = result[storageKey];
         

@@ -4,268 +4,229 @@
   <meta charset="UTF-8">
   <title>Amazon Review Writer</title>
   <style>
+    * { box-sizing: border-box; }
     body {
-      width: 400px;
-      padding: 10px;
-      font-family: Arial, sans-serif;
+      width: 100%;
+      min-width: 320px;
+      max-width: 420px;
+      margin: 0;
+      padding: 12px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
     }
-    .container {
+    .container { display: flex; flex-direction: column; gap: 12px; }
+    h1 { font-size: 18px; margin: 0 0 8px 0; font-weight: 600; }
+    .model-indicator { font-size: 12px; color: #666; margin: 0 0 8px 0; }
+    .tabs {
       display: flex;
-      flex-direction: column;
-      gap: 10px;
+      gap: 4px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #ddd;
     }
-    button {
+    .tabs button {
+      padding: 8px 12px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: #666;
+    }
+    .tabs button.active { color: #1a1a1a; font-weight: 600; border-bottom: 2px solid #1a1a1a; margin-bottom: -1px; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .section {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: #fafafa;
+    }
+    .section-title { font-weight: 600; margin-bottom: 8px; font-size: 13px; }
+    button.primary {
       padding: 8px 16px;
-      background-color: #4CAF50;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button.primary:hover { background: #1557b0; }
+    button.primary:disabled { background: #ccc; cursor: not-allowed; }
+    button.secondary {
+      padding: 6px 12px;
+      background: #e8e8e8;
+      color: #1a1a1a;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.secondary:hover { background: #ddd; }
+    #productTitle { font-size: 14px; word-wrap: break-word; margin-bottom: 8px; }
+    #reviewTitle, #reviewOutput {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: vertical;
+    }
+    #reviewTitle { min-height: 44px; font-weight: 600; }
+    #reviewOutput { min-height: 120px; max-height: 280px; white-space: pre-wrap; }
+    .title-container, .review-container { position: relative; }
+    .copy-btn {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      background: rgba(26, 115, 232, 0.9);
       color: white;
       border: none;
       border-radius: 4px;
       cursor: pointer;
     }
-    button:hover {
-      background-color: #45a049;
+    .copy-btn:hover { background: #1557b0; }
+    #status { padding: 8px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+    .success { background: #e6f4ea; color: #137333; }
+    .error { background: #fce8e6; color: #c5221f; }
+    .aspects-container { display: flex; flex-wrap: wrap; gap: 6px; }
+    .aspect-tag {
+      background: #e8f0fe;
+      color: #1967d2;
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 12px;
     }
-    button:disabled {
-      background-color: #cccccc;
-      cursor: not-allowed;
-    }
-    #status {
-      margin-top: 10px;
-      padding: 10px;
-      border-radius: 4px;
-    }
-    .success {
-      background-color: #dff0d8;
-      color: #3c763d;
-    }
-    .error {
-      background-color: #f2dede;
-      color: #a94442;
-    }
-    #productTitle {
+    .persona-field { margin-bottom: 10px; }
+    .persona-field label { display: block; font-size: 12px; color: #666; margin-bottom: 2px; }
+    .persona-field input, .persona-field textarea {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
       font-size: 14px;
-      margin: 10px 0;
-      word-wrap: break-word;
     }
-    .title-container {
-      position: relative;
-      margin-top: 10px;
+    .persona-field textarea { min-height: 56px; resize: vertical; }
+    .button-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    button.regenerate-btn {
+      padding: 6px;
+      min-width: 32px;
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #1b5e20;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
     }
-    #reviewTitle {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background-color: #f9f9f9;
-      white-space: pre-wrap;
-      font-family: inherit;
-      resize: vertical;
-      min-height: 40px;
-      font-weight: bold;
-    }
-    #copyTitle {
-      position: absolute;
-      bottom: 5px;
-      right: 5px;
-      padding: 4px 8px;
-      font-size: 12px;
-      background-color: rgba(76, 175, 80, 0.8);
-      z-index: 10;
-    }
-    #copyTitle:hover {
-      background-color: rgba(76, 175, 80, 1);
-    }
-    .review-container {
-      position: relative;
-      margin-top: 10px;
-    }
-    #reviewOutput {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background-color: #f9f9f9;
-      white-space: pre-wrap;
-      max-height: 300px;
-      overflow-y: auto;
-      font-family: inherit;
-      resize: vertical;
-      min-height: 150px;
-    }
-    #copyReview {
-      position: absolute;
-      bottom: 5px;
-      right: 5px;
-      padding: 4px 8px;
-      font-size: 12px;
-      background-color: rgba(76, 175, 80, 0.8);
-      z-index: 10;
-    }
-    #copyReview:hover {
-      background-color: rgba(76, 175, 80, 1);
-    }
-    .loading {
-      display: none;
-      text-align: center;
-      margin: 10px 0;
-    }
-    .loading::after {
-      content: "Generating review...";
-      animation: dots 1.5s steps(5, end) infinite;
-    }
-    @keyframes dots {
-      0%, 20% { content: "Generating review."; }
-      40% { content: "Generating review.."; }
-      60% { content: "Generating review..."; }
-      80% { content: "Generating review...."; }
-      100% { content: "Generating review....."; }
-    }
-    .button-group {
-      display: flex;
-      gap: 10px;
-      margin-top: 10px;
-    }
-    #extraDirections {
+    button.regenerate-btn.primary { background: #1a73e8; }
+    button.regenerate-btn.primary:hover { background: #1557b0; }
+    button.regenerate-btn.primary:disabled { background: #ccc; cursor: not-allowed; }
+    button.regenerate-btn:hover { background: #2e7d32; }
+    button.regenerate-btn:disabled { background: #81c784; cursor: not-allowed; }
+    button.regenerate-btn svg { width: 18px; height: 18px; }
+    button.regenerate-btn.spinning svg { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .review-button-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    /* Settings */
+    .settings-section { margin-bottom: 16px; }
+    .settings-section label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 13px; }
+    .settings-section select {
       width: 100%;
       padding: 8px;
       border: 1px solid #ddd;
-      border-radius: 4px;
-      margin-top: 10px;
-      font-family: inherit;
-    }
-    .input-label {
-      font-size: 14px;
-      margin-top: 10px;
-      font-weight: bold;
-    }
-    .aspects-section {
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      padding: 10px;
-      margin-top: 10px;
-      background-color: #f9f9f9;
-    }
-    .aspects-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    .aspects-title {
-      font-weight: bold;
+      border-radius: 6px;
       font-size: 14px;
     }
-    .aspects-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
-    .aspect-tag {
-      background-color: #e0f7fa;
-      color: #006064;
-      padding: 4px 8px;
-      border-radius: 12px;
-      font-size: 12px;
-      display: inline-block;
-      margin-bottom: 5px;
-    }
-    .persona-section {
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      padding: 10px;
-      margin-top: 10px;
-      background-color: #f9f9f9;
-    }
-    .persona-field {
-      margin-bottom: 8px;
-    }
-    .persona-field label {
-      display: block;
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 2px;
-    }
-    .persona-field input, .persona-field textarea {
-      width: 100%;
-      padding: 4px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 14px;
-    }
-    .persona-field textarea {
-      height: 60px;
-      resize: vertical;
-    }
-    .persona-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    .persona-title {
-      font-weight: bold;
-      font-size: 14px;
-    }
+    #settingsStatus { margin-bottom: 12px; font-size: 13px; padding: 8px; border-radius: 6px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Amazon Review Writer</h2>
-    <div id="productTitle"></div>
-    
-    <div class="aspects-section">
-      <div class="aspects-header">
-        <div class="aspects-title">Key Aspects to Focus On</div>
-        <button id="regenerateAspects">Regenerate</button>
-      </div>
-      <div class="aspects-container" id="aspectsContainer">
-        <div class="aspect-tag">Loading aspects...</div>
-      </div>
+    <h1>Amazon Review Writer</h1>
+    <p id="currentModelLabel" class="model-indicator"></p>
+    <div class="tabs">
+      <button type="button" id="tabMain" class="active">Main</button>
+      <button type="button" id="tabSettings">Settings</button>
     </div>
-    
-    <div class="persona-section">
-      <div class="persona-header">
-        <div class="persona-title">Reviewer Persona</div>
-        <button id="regeneratePersona">Regenerate</button>
+
+    <div id="panelMain" class="panel active">
+      <div id="status"></div>
+      <div id="productTitle"></div>
+
+      <div class="section">
+        <div class="button-row">
+          <span class="section-title">Key Aspects to Focus On</span>
+          <button type="button" id="regenerateAspects" class="regenerate-btn" aria-label="Regenerate aspects"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>
+        </div>
+        <div class="aspects-container" id="aspectsContainer">
+          <span class="aspect-tag">Loading...</span>
+        </div>
       </div>
-      <div class="persona-field">
-        <label for="personaAge">Age:</label>
-        <input type="number" id="personaAge" min="18" max="100">
+
+      <div class="section">
+        <div class="button-row">
+          <span class="section-title">Reviewer Persona</span>
+          <button type="button" id="regeneratePersona" class="regenerate-btn" aria-label="Regenerate persona"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>
+        </div>
+        <div class="persona-field">
+          <label for="personaAge">Age</label>
+          <input type="number" id="personaAge" min="18" max="100">
+        </div>
+        <div class="persona-field">
+          <label for="personaGender">Gender</label>
+          <input type="text" id="personaGender">
+        </div>
+        <div class="persona-field">
+          <label for="personaOccupation">Occupation</label>
+          <input type="text" id="personaOccupation">
+        </div>
+        <div class="persona-field">
+          <label for="personaDescription">Description</label>
+          <textarea id="personaDescription"></textarea>
+        </div>
       </div>
-      <div class="persona-field">
-        <label for="personaGender">Gender:</label>
-        <input type="text" id="personaGender">
-      </div>
-      <div class="persona-field">
-        <label for="personaOccupation">Occupation:</label>
-        <input type="text" id="personaOccupation">
-      </div>
-      <div class="persona-field">
-        <label for="personaDescription">Description:</label>
-        <textarea id="personaDescription"></textarea>
+
+      <div class="section">
+        <div class="section-title">Generated Review</div>
+        <div class="title-container">
+          <textarea id="reviewTitle" placeholder="Review title..."></textarea>
+          <button type="button" id="copyTitle" class="copy-btn" style="display: none;">Copy Title</button>
+        </div>
+        <div class="review-container" style="margin-top: 8px;">
+          <textarea id="reviewOutput" placeholder="Review body..."></textarea>
+          <button type="button" id="copyReview" class="copy-btn" style="display: none;">Copy Review</button>
+        </div>
+        <div class="review-button-row">
+          <button type="button" id="regenerateReview" class="regenerate-btn primary" aria-label="Regenerate review"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>
+          <button type="button" id="writeReview" class="primary" style="display: none;">Write Review</button>
+        </div>
       </div>
     </div>
 
-    <div class="input-label">Extra Directions (Optional):</div>
-    <textarea id="extraDirections" rows="3" placeholder="Add any specific instructions for the review generation..."></textarea>
-    <div id="loading" class="loading"></div>
-    
-    <div class="title-container">
-      <textarea id="reviewTitle" placeholder="Review title will appear here..."></textarea>
-      <button id="copyTitle" style="display: none;">Copy Title</button>
+    <div id="panelSettings" class="panel">
+      <div id="settingsStatus"></div>
+      <div class="settings-section">
+        <label for="settingsProvider">Provider</label>
+        <select id="settingsProvider">
+          <option value="openrouter">OpenRouter</option>
+        </select>
+      </div>
+      <div class="settings-section">
+        <label for="settingsModel">Model</label>
+        <select id="settingsModel"></select>
+      </div>
+      <button type="button" id="settingsSave" class="primary">Save settings</button>
     </div>
-    
-    <div class="review-container">
-      <textarea id="reviewOutput" placeholder="Generated review will appear here..."></textarea>
-      <button id="copyReview" style="display: none;">Copy Review</button>
-    </div>
-    
-    <div class="button-group">
-      <button id="regenerateReview" style="display: none;">Regenerate</button>
-      <button id="writeReview" style="display: none;">Write Review</button>
-    </div>
-    <div id="status"></div>
   </div>
+  <script src="storage-keys.js"></script>
   <script src="popup.js"></script>
 </body>
-</html> 
+</html>

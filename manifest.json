@@ -2,13 +2,8 @@
   "manifest_version": 3,
   "name": "Amazon Review Writer",
   "version": "1.0",
-  "description": "Automatically generates product reviews for Amazon products using OpenRouter (Claude Haiku 4.5)",
-  "permissions": [
-    "activeTab",
-    "scripting",
-    "tabs",
-    "storage"
-  ],
+  "description": "Generate product reviews for Amazon using OpenRouter",
+  "permissions": ["activeTab", "scripting", "tabs", "storage"],
   "host_permissions": [
     "https://*.amazon.com/*",
     "https://openrouter.ai/*"
@@ -19,17 +14,16 @@
   "content_scripts": [
     {
       "matches": ["https://*.amazon.com/*"],
-      "js": ["content.js"],
+      "js": ["prompts.js", "content.js"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://*.amazon.com/review/review-your-purchases/*"],
-      "js": ["typing-simulator.js", "review-page.js"],
+      "js": ["storage-keys.js", "typing-simulator.js", "review-page.js"],
       "run_at": "document_end"
     }
   ],
-  
   "background": {
     "service_worker": "background.js"
   }
-} 
+}
