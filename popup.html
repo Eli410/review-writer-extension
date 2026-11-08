@@ -215,7 +215,7 @@
       <div id="settingsStatus"></div>
       <div class="settings-section">
         <label for="settingsProvider">Provider</label>
-        <select id="settingsProvider">
+        <select id="settingsProvider" disabled>
           <option value="openrouter">OpenRouter</option>
         </select>
       </div>
@@ -223,10 +223,21 @@
         <label for="settingsModel">Model</label>
         <select id="settingsModel"></select>
       </div>
+      <div class="settings-section">
+        <label for="settingsApiKey">OpenRouter API key</label>
+        <input type="password" id="settingsApiKey" placeholder="Leave empty to use .env fallback" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px;">
+        <div class="review-button-row">
+          <button type="button" id="settingsApiKeySave" class="secondary">Save key</button>
+          <button type="button" id="settingsKeyTest" class="secondary">Test key</button>
+        </div>
+        <p style="font-size: 11px; color: #666; margin: 6px 0 0 0;">Stored locally in this browser. A .env file with OPENROUTER_API_KEY is used when this is empty.</p>
+      </div>
       <button type="button" id="settingsSave" class="primary">Save settings</button>
     </div>
   </div>
+  <script src="config.js"></script>
   <script src="storage-keys.js"></script>
+  <script src="prompts.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

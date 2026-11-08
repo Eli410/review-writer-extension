@@ -1,15 +1,18 @@
 /**
- * Provider and model configuration. Used by background.js (importScripts).
- * Model IDs must match the options in sidepanel Settings UI.
+ * Provider and model configuration. Loaded by:
+ *  - background.js via importScripts()
+ *  - popup.html via <script> (before popup.js)
+ * so both always agree on a single model list.
  */
 const PROVIDER_CONFIG = {
   openrouter: {
-    defaultModel: 'anthropic/claude-haiku-4.5',
+    // Claude Haiku 5.5 (Oct 2026): strong casual writing, $0.10/$0.50 per 1M tokens.
+    defaultModel: 'anthropic/claude-haiku-5.5',
     models: [
-      { id: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5' },
-      { id: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
-      { id: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
-      { id: 'moonshotai/kimi-k2.5', label: 'Kimi K2.5' },
+      { id: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5' },
+      { id: 'openai/gpt-6-luna', label: 'GPT-6 Luna' },
+      { id: 'deepseek/deepseek-v4.1-flash-1017', label: 'DeepSeek V4.1 Flash' },
+      { id: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
     ],
   },
 };

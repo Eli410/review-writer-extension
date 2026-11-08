@@ -1,590 +1,587 @@
-document.addEventListener('DOMContentLoaded', async function () {
-  const regenerateReviewButton = document.getElementById('regenerateReview');
-  const regeneratePersonaButton = document.getElementById('regeneratePersona');
-  const regenerateAspectsButton = document.getElementById('regenerateAspects');
-  const writeReviewButton = document.getElementById('writeReview');
-  const statusDiv = document.getElementById('status');
-  const productTitleDiv = document.getElementById('productTitle');
-  const reviewOutputDiv = document.getElementById('reviewOutput');
-  const copyButton = document.getElementById('copyReview');
-  const aspectsContainer = document.getElementById('aspectsContainer');
-  const reviewTitleDiv = document.getElementById('reviewTitle');
-  const copyTitleButton = document.getElementById('copyTitle');
-  const personaAgeInput = document.getElementById('personaAge');
-  const personaGenderInput = document.getElementById('personaGender');
-  const personaOccupationInput = document.getElementById('personaOccupation');
-  const personaDescriptionInput = document.getElementById('personaDescription');
-  const tabMain = document.getElementById('tabMain');
-  const tabSettings = document.getElementById('tabSettings');
-  const panelMain = document.getElementById('panelMain');
-  const panelSettings = document.getElementById('panelSettings');
-  const settingsProvider = document.getElementById('settingsProvider');
-  const settingsModel = document.getElementById('settingsModel');
-  const settingsSave = document.getElementById('settingsSave');
-  const settingsStatus = document.getElementById('settingsStatus');
-  const currentModelLabel = document.getElementById('currentModelLabel');
-
-  let currentTabId = null;
-  let currentAspects = [];
-  let aspectsLoaded = false;
-  let personaLoaded = false;
-
-  const MODEL_OPTIONS = {
-    openrouter: [
-      { id: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5' },
-      { id: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
-      { id: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
-      { id: 'moonshotai/kimi-k2.5', label: 'Kimi K2.5' },
-    ],
+/**
+ * Popup orchestrator. All LLM work is requested from the background service
+ * worker directly (single hop). The content script is only used to scrape the
+ * page. Storage is batched and keyed by ASIN (falls back to tab ID on pages
+ * without one).
+ */
+document.addEventListener('DOMContentLoaded', async () => {
+  const el = {
+    status: document.getElementById('status'),
+    productTitle: document.getElementById('productTitle'),
+    reviewOutput: document.getElementById('reviewOutput'),
+    reviewTitle: document.getElementById('reviewTitle'),
+    aspectsContainer: document.getElementById('aspectsContainer'),
+    personaAge: document.getElementById('personaAge'),
+    personaGender: document.getElementById('personaGender'),
+    personaOccupation: document.getElementById('personaOccupation'),
+    personaDescription: document.getElementById('personaDescription'),
+    writeReview: document.getElementById('writeReview'),
+    copyButton: document.getElementById('copyReview'),
+    copyTitleButton: document.getElementById('copyTitle'),
+    busyButtons: {
+      review: document.getElementById('regenerateReview'),
+      persona: document.getElementById('regeneratePersona'),
+      aspects: document.getElementById('regenerateAspects'),
+    },
+    settingsProvider: document.getElementById('settingsProvider'),
+    settingsModel: document.getElementById('settingsModel'),
+    settingsApiKey: document.getElementById('settingsApiKey'),
+    settingsApiKeySave: document.getElementById('settingsApiKeySave'),
+    settingsKeyTest: document.getElementById('settingsKeyTest'),
+    settingsSave: document.getElementById('settingsSave'),
+    settingsStatus: document.getElementById('settingsStatus'),
+    currentModelLabel: document.getElementById('currentModelLabel'),
   };
 
-  async function getAsinOrTabId() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    currentTabId = tab?.id ?? null;
-    if (!tab?.url?.includes('amazon.com')) return { asinOrTabId: currentTabId, isTabFallback: true };
+  const models = PROVIDER_CONFIG?.openrouter?.models || [];
+  const defaultModel = PROVIDER_CONFIG?.openrouter?.defaultModel || models[0]?.id;
+
+  // Per-open context, resolved once in init().
+  const ctx = {
+    tabId: null,
+    url: '',
+    asinOrTabId: null,
+    isProductPage: false,
+  };
+
+  // ------------------------------------------------------------- plumbing
+
+  const asinOrTabId = () => ctx.asinOrTabId ?? ctx.tabId;
+
+  async function loadStored(names) {
+    const suffix = asinOrTabId();
+    if (suffix == null) return {};
+    const keys = names.map((name) => getStorageKey(name, suffix));
     try {
-      await ensureContentScriptInjected(tab.id);
-      const response = await chrome.tabs.sendMessage(tab.id, { action: 'getAsin' });
-      if (response?.asin) return { asinOrTabId: response.asin, isTabFallback: false };
-    } catch (_) {}
-    return { asinOrTabId: currentTabId, isTabFallback: true };
+      const result = await chrome.storage.local.get(keys);
+      const out = {};
+      for (const name of names) out[name] = result[getStorageKey(name, suffix)] ?? null;
+      return out;
+    } catch (error) {
+      console.error('Storage read failed:', error);
+      return {};
+    }
   }
 
-  async function checkAmazonPage() {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      currentTabId = tab?.id;
-      if (!tab?.url?.includes('amazon.com')) {
-        productTitleDiv.textContent = 'Please navigate to an Amazon product page';
-        productTitleDiv.style.color = 'red';
-        return false;
-      }
-      if (!tab.url.includes('/dp/') && !tab.url.includes('/review/review-your-purchases/')) {
-        productTitleDiv.textContent = 'Please navigate to an Amazon product page or review page';
-        productTitleDiv.style.color = 'red';
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error('Error checking Amazon page:', error);
-      productTitleDiv.textContent = 'Error: ' + (error?.message || 'Unknown');
-      productTitleDiv.style.color = 'red';
-      return false;
+  async function saveStored(map) {
+    const suffix = asinOrTabId();
+    if (suffix == null || !map || Object.keys(map).length === 0) return;
+    const payload = {};
+    for (const [name, value] of Object.entries(map)) {
+      payload[getStorageKey(name, suffix)] = value;
     }
+    try {
+      await chrome.storage.local.set(payload);
+    } catch (error) {
+      console.error('Storage write failed:', error);
+    }
+  }
+
+  async function getActiveTab() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    ctx.tabId = tab?.id ?? null;
+    ctx.url = tab?.url || '';
+    return tab;
   }
 
   async function ensureContentScriptInjected(tabId) {
     try {
+      const ping = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+      if (ping?.status === 'ok') return true;
+    } catch (_) {}
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 150));
       try {
-        const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-        if (response?.status === 'ok') return true;
+        const ping = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+        if (ping?.status === 'ok') return true;
       } catch (_) {}
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-      await new Promise((r) => setTimeout(r, 800));
-      for (let i = 0; i < 3; i++) {
-        try {
-          const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-          if (response?.status === 'ok') return true;
-        } catch (_) {}
-        await new Promise((r) => setTimeout(r, 400));
-      }
-      throw new Error('Content script not ready. Refresh the page and try again.');
-    } catch (error) {
-      throw new Error(error?.message || 'Failed to inject content script');
     }
+    throw new Error('Could not connect to the page. Refresh it and try again.');
   }
 
-  async function getProductTitle() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.url?.includes('amazon.com')) throw new Error('Not on Amazon');
-    await ensureContentScriptInjected(tab.id);
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'getProductTitle' });
-    if (response?.error) throw new Error(response.error);
-    return response?.title ?? null;
+  async function scrapeProductInfo() {
+    if (!ctx.isProductPage) throw new Error('Please navigate to an Amazon product page.');
+    await ensureContentScriptInjected(ctx.tabId);
+    const response = await chrome.tabs.sendMessage(ctx.tabId, { action: 'getProductInfo' });
+    if (chrome.runtime.lastError) throw new Error('Could not read the product page.');
+    const productInfo = response?.productInfo;
+    if (!productInfo?.title) throw new Error('Could not read product details from this page.');
+    return productInfo;
   }
 
-  async function getProductInfo() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.url?.includes('amazon.com')) throw new Error('Not on Amazon');
-    await ensureContentScriptInjected(tab.id);
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'getProductInfo' });
-    if (response?.error) throw new Error(response.error);
-    return response?.productInfo ?? null;
+  // ------------------------------------------------------------------ UI
+
+  function setStatus(kind, message) {
+    el.status.textContent = message || '';
+    el.status.className = kind || '';
   }
 
-  async function getProductId() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const url = tab?.url || '';
-    const dpMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
-    if (dpMatch?.[1]) return dpMatch[1];
-    const asinMatch = url.match(/[?&]asin=([A-Z0-9]{10})/);
-    if (asinMatch?.[1]) return asinMatch[1];
-    const { asinOrTabId } = await getAsinOrTabId();
-    if (typeof asinOrTabId === 'string' && /^[A-Z0-9]{10}$/.test(asinOrTabId)) return asinOrTabId;
-    return null;
+  function withButton(name, busy) {
+    const button = el.busyButtons[name];
+    if (!button) return;
+    button.classList.toggle('spinning', busy);
+    button.disabled = busy;
   }
 
-  async function openAmazonReviewPage() {
-    const productId = await getProductId();
-    if (!productId) {
-      displayError('Could not extract product ID from URL');
-      return;
-    }
-    const reviewText = reviewOutputDiv.value;
-    const reviewTitle = reviewTitleDiv.value;
-    const fullReviewText = `Title: ${reviewTitle}\n\nReview: ${reviewText}`;
-    await saveToStorage('review', fullReviewText);
-    const reviewUrl = `https://www.amazon.com/review/review-your-purchases/?asin=${productId}`;
-    const newTab = await chrome.tabs.create({ url: reviewUrl });
-    let attempts = 0;
-    const maxAttempts = 3;
-    const tryFillReview = async () => {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: newTab.id },
-          files: ['review-page.js'],
-        });
-        const response = await chrome.tabs.sendMessage(newTab.id, {
-          action: 'fillReviewTextarea',
-          reviewText: fullReviewText,
-        });
-        if (!response?.success) throw new Error('Failed to fill review form');
-      } catch (error) {
-        console.error('Error filling review form:', error);
-        attempts++;
-        if (attempts < maxAttempts) setTimeout(tryFillReview, 1000 * attempts);
-        else displayError('Failed to fill review form after multiple attempts');
-      }
-    };
-    setTimeout(tryFillReview, 1000);
+  function showReview(title, review) {
+    el.reviewTitle.value = title || '';
+    el.reviewOutput.value = review || '';
+    el.copyButton.style.display = 'block';
+    el.copyTitleButton.style.display = 'block';
+    el.writeReview.style.display = 'block';
+    el.writeReview.disabled = !review;
   }
 
-  function updateWriteReviewButtonState(hasReview) {
-    writeReviewButton.style.display = hasReview ? 'block' : 'none';
-    writeReviewButton.disabled = !hasReview;
-  }
-
-  async function saveToStorage(key, data) {
-    try {
-      const { asinOrTabId, isTabFallback } = await getAsinOrTabId();
-      const storageKey = getStorageKey(key, asinOrTabId);
-      await chrome.storage.local.set({ [storageKey]: data });
-      if (isTabFallback) {
-        statusDiv.textContent = 'Saved for this tab (product ID not detected).';
-        statusDiv.className = 'success';
-      }
-    } catch (error) {
-      console.error('Error saving to storage:', error);
-    }
-  }
-
-  async function getFromStorage(key) {
-    try {
-      const { asinOrTabId } = await getAsinOrTabId();
-      const storageKey = getStorageKey(key, asinOrTabId);
-      const result = await chrome.storage.local.get(storageKey);
-      return result[storageKey] ?? null;
-    } catch (error) {
-      console.error('Error getting from storage:', error);
-      return null;
-    }
-  }
-
-  function showLoading() {
-    regenerateReviewButton.classList.add('spinning');
-    regenerateReviewButton.disabled = true;
-    reviewOutputDiv.value = '';
-    reviewTitleDiv.value = '';
-    copyButton.style.display = 'none';
-    copyTitleButton.style.display = 'none';
-    writeReviewButton.style.display = 'none';
-  }
-
-  function hideLoading() {
-    regenerateReviewButton.classList.remove('spinning');
-    regenerateReviewButton.disabled = false;
-  }
-
-  function displayError(message) {
-    statusDiv.textContent = message;
-    statusDiv.className = 'error';
+  function hideReview() {
+    el.reviewOutput.value = '';
+    el.reviewTitle.value = '';
+    el.copyButton.style.display = 'none';
+    el.copyTitleButton.style.display = 'none';
+    el.writeReview.style.display = 'none';
   }
 
   function updatePersonaFields(persona) {
     if (!persona) return;
-    personaAgeInput.value = persona.age ?? '';
-    personaGenderInput.value = persona.gender ?? '';
-    personaOccupationInput.value = persona.occupation ?? '';
-    personaDescriptionInput.value = persona.description ?? '';
+    el.personaAge.value = persona.age ?? '';
+    el.personaGender.value = persona.gender ?? '';
+    el.personaOccupation.value = persona.occupation ?? '';
+    el.personaDescription.value = persona.description ?? '';
   }
 
-  function getCurrentPersona() {
+  function currentPersonaFieldsFilled() {
+    return Boolean(
+      el.personaAge.value &&
+      el.personaGender.value.trim() &&
+      el.personaOccupation.value.trim() &&
+      el.personaDescription.value.trim(),
+    );
+  }
+
+  function currentPersona() {
     return {
-      age: parseInt(personaAgeInput.value, 10) || 0,
-      gender: (personaGenderInput.value || '').trim(),
-      occupation: (personaOccupationInput.value || '').trim(),
-      description: (personaDescriptionInput.value || '').trim(),
+      age: parseInt(el.personaAge.value, 10) || 0,
+      gender: el.personaGender.value.trim(),
+      occupation: el.personaOccupation.value.trim(),
+      description: el.personaDescription.value.trim(),
     };
   }
 
+  let currentAspects = [];
+
   function updateAspectsDisplay(aspects) {
-    if (!aspects || !Array.isArray(aspects) || aspects.length === 0) {
-      aspectsContainer.innerHTML = '<span class="aspect-tag">No aspects</span>';
+    if (!Array.isArray(aspects) || aspects.length === 0) {
+      el.aspectsContainer.innerHTML = '<span class="aspect-tag">No aspects</span>';
+      currentAspects = [];
       return;
     }
-    aspectsContainer.innerHTML = '';
-    aspects.forEach((a) => {
-      const el = document.createElement('span');
-      el.className = 'aspect-tag';
-      el.textContent = a;
-      aspectsContainer.appendChild(el);
-    });
+    el.aspectsContainer.innerHTML = '';
+    for (const aspect of aspects) {
+      const tag = document.createElement('span');
+      tag.className = 'aspect-tag';
+      tag.textContent = aspect;
+      el.aspectsContainer.appendChild(tag);
+    }
     currentAspects = aspects;
   }
 
-  function normalizeDashes(str) {
-    if (!str || typeof str !== 'string') return str;
-    return str
-      .replace(/\b([a-zA-Z]+)-([a-zA-Z]+)\b/g, '$1 $2')
-      .replace(/—/g, ', ')
-      .replace(/\s*-\s*/g, ', ')
-      .replace(/,\s*,/g, ',');
-  }
-
-  function parseReviewText(text, fallbackTitle = '') {
-    let title = fallbackTitle || 'Product Review';
-    let review = text || '';
+  // LLM access: popup → background. The response is raw assistant text;
+  // callers own parsing/validation via the shared parseJsonFromLLM helper.
+  async function llm(task, userPrompt) {
+    let response;
     try {
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === 'object') {
-          if (typeof parsed.title === 'string') title = parsed.title.trim();
-          if (typeof parsed.review === 'string') review = parsed.review.trim();
-          return { title: normalizeDashes(title), review: normalizeDashes(review) };
-        }
-      } catch (_) {}
-      const titleMatch = text.match(/Title:\s*([^\n]+)/i);
-      const reviewMatch = text.match(/Review:\s*([\s\S]+?)(?=\n\nTitle:|$)/i);
-      if (titleMatch && reviewMatch) {
-        title = titleMatch[1].trim();
-        review = reviewMatch[1].trim();
-      } else {
-        const paragraphs = text.split('\n\n').filter((p) => p.trim());
-        if (paragraphs.length >= 2) {
-          review = paragraphs[0].trim();
-          title = paragraphs[1].trim();
-        } else if (paragraphs.length === 1) review = paragraphs[0].trim();
-      }
-      review = review.replace(/^Review:\s*/i, '').trim();
-      return { title: normalizeDashes(title), review: normalizeDashes(review) };
-    } catch (_) {
-      return { title: 'Product Review', review: normalizeDashes(text) };
-    }
-  }
-
-  async function generateAspects() {
-    regenerateAspectsButton.classList.add('spinning');
-    regenerateAspectsButton.disabled = true;
-    try {
-      statusDiv.textContent = '';
-      statusDiv.className = '';
-      let productInfo = await getFromStorage('productInfo');
-      if (!productInfo) {
-        productInfo = await getProductInfo();
-        if (!productInfo) throw new Error('Could not fetch product information');
-        await saveToStorage('productInfo', productInfo);
-      }
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.url?.includes('amazon.com')) throw new Error('Please navigate to an Amazon product page');
-      await ensureContentScriptInjected(tab.id);
-      const response = await chrome.tabs.sendMessage(tab.id, { action: 'generateAspects', productInfo });
-      if (response?.error) throw new Error(response.error);
-      const aspects = response.aspects;
-      await saveToStorage('aspects', aspects);
-      updateAspectsDisplay(aspects);
-      statusDiv.textContent = 'Key aspects generated.';
-      statusDiv.className = 'success';
+      response = await chrome.runtime.sendMessage({ action: 'llmComplete', task, userPrompt });
     } catch (error) {
-      displayError(error?.message || 'Failed to generate aspects');
-    } finally {
-      regenerateAspectsButton.classList.remove('spinning');
-      regenerateAspectsButton.disabled = false;
+      throw new Error('Background service worker is unavailable. Reload the extension and try again.');
     }
+    if (response?.error) throw new Error(response.error);
+    if (!response?.text) throw new Error('Empty response from the model. Try again.');
+    return response.text;
   }
 
-  async function generatePersona() {
-    regeneratePersonaButton.classList.add('spinning');
-    regeneratePersonaButton.disabled = true;
-    try {
-      statusDiv.textContent = '';
-      statusDiv.className = '';
-      let productInfo = await getFromStorage('productInfo');
-      if (!productInfo) {
-        productInfo = await getProductInfo();
-        if (!productInfo) throw new Error('Could not fetch product information');
-        await saveToStorage('productInfo', productInfo);
-      }
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.url?.includes('amazon.com')) throw new Error('Please navigate to an Amazon product page');
-      await ensureContentScriptInjected(tab.id);
-      const response = await chrome.tabs.sendMessage(tab.id, { action: 'generatePersona', productInfo });
-      if (response?.error) throw new Error(response.error);
-      const persona = response.persona;
-      await saveToStorage('persona', persona);
-      updatePersonaFields(persona);
-      statusDiv.textContent = 'Persona generated.';
-      statusDiv.className = 'success';
-    } catch (error) {
-      displayError(error?.message || 'Failed to generate persona');
-    } finally {
-      regeneratePersonaButton.classList.remove('spinning');
-      regeneratePersonaButton.disabled = false;
+  const ASPECT_LIMIT = 5;
+
+  function normalizeAspects(aspects) {
+    if (!Array.isArray(aspects)) return null;
+    const strings = aspects.filter((a) => typeof a === 'string' && a.trim()).map((a) => {
+      const words = a.trim().split(/\s+/);
+      return words.length <= 2 ? words.join(' ') : words.slice(0, 2).join(' ');
+    });
+    return strings.length >= 2 ? strings.slice(0, ASPECT_LIMIT) : null;
+  }
+
+  function normalizePersona(persona) {
+    if (!persona || typeof persona !== 'object') return null;
+    const age = Number(persona.age);
+    const gender = typeof persona.gender === 'string' ? persona.gender.trim() : '';
+    const occupation = typeof persona.occupation === 'string' ? persona.occupation.trim() : '';
+    const description = typeof persona.description === 'string' ? persona.description.trim() : '';
+    if (!Number.isFinite(age) || age < 13 || age > 110 || !gender || !occupation) return null;
+    return { age: Math.round(age), gender, occupation, description: description.slice(0, 200) };
+  }
+
+  function normalizeReviewResult(parsed) {
+    const title = typeof parsed?.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null;
+    const review = typeof parsed?.review === 'string' && parsed.review.trim() ? parsed.review.trim() : null;
+    if (!title || !review) return null;
+    return { title: normalizeDashes(title), review: normalizeDashes(review) };
+  }
+
+  // ------------------------------------------------------------ generation
+
+  async function generatePersona({ productInfo } = {}) {
+    let info = productInfo;
+    if (!info) info = (await loadStored(['productInfo'])).productInfo;
+    if (!info) {
+      info = await scrapeProductInfo();
+      await saveStored({ productInfo: info });
     }
+    const persona = normalizePersona(parseJsonFromLLM(await llm('persona', buildPersonaPrompt(info))));
+    if (!persona) throw new Error('The model returned a persona in an unexpected format. Try regenerating.');
+    await saveStored({ persona });
+    updatePersonaFields(persona);
+    return persona;
+  }
+
+  async function generateAspects({ productInfo } = {}) {
+    let info = productInfo;
+    if (!info) info = (await loadStored(['productInfo'])).productInfo;
+    if (!info) {
+      info = await scrapeProductInfo();
+      await saveStored({ productInfo: info });
+    }
+    const aspects = normalizeAspects(parseJsonFromLLM(await llm('aspects', buildAspectsPrompt(info))));
+    if (!aspects) throw new Error('The model returned aspects in an unexpected format. Try regenerating.');
+    await saveStored({ aspects });
+    updateAspectsDisplay(aspects);
+    return aspects;
+  }
+
+  /**
+   * Ensure a persona exists. Uses edited fields when present so manual edits
+   * are respected; regenerates only when everything is empty.
+   */
+  async function ensurePersona() {
+    if (currentPersonaFieldsFilled()) return currentPersona();
+    return generatePersona();
   }
 
   async function generateReview() {
-    try {
-      showLoading();
-      statusDiv.textContent = 'Generating review...';
-      statusDiv.className = '';
-      let productInfo = await getFromStorage('productInfo');
-      if (!productInfo) {
-        productInfo = await getProductInfo();
-        if (!productInfo) throw new Error('Could not fetch product information');
-        await saveToStorage('productInfo', productInfo);
-      }
-      const persona = getCurrentPersona();
-      const aspects = currentAspects;
-      const finalExtraDirections =
-        aspects?.length > 0
-          ? `Please focus on these key aspects in your review: ${aspects.join(', ')}.`
-          : '';
+    const persona = await ensurePersona();
+    let info = (await loadStored(['productInfo'])).productInfo;
+    if (!info) {
+      info = await scrapeProductInfo();
+      await saveStored({ productInfo: info });
+    }
+    const text = await llm('review', buildReviewPrompt(info, persona, currentAspects));
+    const parsed = normalizeReviewResult(parseJsonFromLLM(text));
+    if (!parsed) throw new Error('The model returned the review in an unexpected format. Try regenerating.');
+    await saveStored({ review: `Title: ${parsed.title}\n\nReview: ${parsed.review}` });
+    showReview(parsed.title, parsed.review);
+    return parsed;
+  }
 
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.url?.includes('amazon.com')) throw new Error('Please navigate to an Amazon product page');
-      await ensureContentScriptInjected(tab.id);
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        action: 'generateReview',
-        productInfo,
-        persona,
-        extraDirections: finalExtraDirections,
-      });
-      if (response?.error) throw new Error(response.error);
-      const reviewText = response.formattedText || response.review || '';
-      const titleFromResponse = response.title || '';
-      const { title, review } = parseReviewText(reviewText, titleFromResponse);
-      const normalizedText = `Title: ${title}\n\nReview: ${review}`;
-      await saveToStorage('review', normalizedText);
-      reviewOutputDiv.value = review;
-      reviewTitleDiv.value = title;
-      copyButton.style.display = 'block';
-      copyTitleButton.style.display = 'block';
-      updateWriteReviewButtonState(true);
-      statusDiv.textContent = 'Review generated.';
-      statusDiv.className = 'success';
+  /**
+   * One combined call when a product has nothing stored yet: persona +
+   * aspects + review together. Missing pieces fall back to single-task calls.
+   */
+  async function generateFull(productInfo) {
+    const text = await llm('full', buildFullPrompt(productInfo));
+    const parsed = parseJsonFromLLM(text);
+    const review = normalizeReviewResult(parsed?.review);
+    if (!review) {
+      throw new Error('The model returned the combined result in an unexpected format. Try regenerating.');
+    }
+
+    const persona = normalizePersona(parsed?.persona);
+    const aspects = normalizeAspects(parsed?.aspects);
+    const toSave = { review: `Title: ${review.title}\n\nReview: ${review.review}` };
+    if (persona) {
+      updatePersonaFields(persona);
+      toSave.persona = persona;
+    }
+    if (aspects) {
+      updateAspectsDisplay(aspects);
+      toSave.aspects = aspects;
+    }
+    await saveStored(toSave);
+    showReview(review.title, review.review);
+    return { persona: Boolean(persona), aspects: Boolean(aspects) };
+  }
+
+  async function regenerate(kind) {
+    withButton(kind, true);
+    setStatus('', 'Generating…');
+    try {
+      if (kind === 'persona') {
+        await generatePersona();
+        setStatus('success', 'Persona generated.');
+      } else if (kind === 'aspects') {
+        await generateAspects();
+        setStatus('success', 'Key aspects generated.');
+      } else {
+        await generateReview();
+        setStatus('success', 'Review generated.');
+      }
     } catch (error) {
-      displayError(error?.message || 'Failed to generate review');
-      updateWriteReviewButtonState(false);
+      setStatus('error', error?.message || `Failed to regenerate ${kind}.`);
     } finally {
-      hideLoading();
+      withButton(kind, false);
     }
   }
 
-  writeReviewButton.addEventListener('click', () => openAmazonReviewPage());
+  // ------------------------------------------------------------ init flow
 
-  copyButton.addEventListener('click', () => {
-    navigator.clipboard.writeText(reviewOutputDiv.value).then(() => {
-      const t = copyButton.textContent;
-      copyButton.textContent = 'Copied!';
-      setTimeout(() => { copyButton.textContent = t; }, 2000);
-    });
-  });
-  copyTitleButton.addEventListener('click', () => {
-    navigator.clipboard.writeText(reviewTitleDiv.value).then(() => {
-      const t = copyTitleButton.textContent;
-      copyTitleButton.textContent = 'Copied!';
-      setTimeout(() => { copyTitleButton.textContent = t; }, 2000);
-    });
-  });
-  regeneratePersonaButton.addEventListener('click', () => generatePersona());
-  regenerateAspectsButton.addEventListener('click', () => generateAspects());
-  regenerateReviewButton.addEventListener('click', () => generateReview());
-
-  tabMain.addEventListener('click', () => {
-    tabMain.classList.add('active');
-    tabSettings.classList.remove('active');
-    panelMain.classList.add('active');
-    panelSettings.classList.remove('active');
-  });
-  tabSettings.addEventListener('click', () => {
-    tabSettings.classList.add('active');
-    tabMain.classList.remove('active');
-    panelSettings.classList.add('active');
-    panelMain.classList.remove('active');
-    refreshSettingsModelOptions();
-  });
-
-  function refreshSettingsModelOptions() {
-    const provider = settingsProvider.value;
-    const models = MODEL_OPTIONS[provider] || [];
-    settingsModel.innerHTML = '';
-    models.forEach((m) => {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.label;
-      settingsModel.appendChild(opt);
-    });
+  function isSupportedAmazonUrl(url) {
+    if (!/\.amazon\./.test(url)) return { ok: false, reason: 'not-amazon' };
+    if (!/\/dp\/|\/review\/review-your-purchases\//.test(url)) {
+      return { ok: false, reason: 'not-product' };
+    }
+    return { ok: true };
   }
 
   async function loadSettings() {
-    let raw = await chrome.storage.sync.get('settings');
-    let s = raw.settings || {};
-    if (!s.model && !s.provider) {
-      const localRaw = await chrome.storage.local.get('settings');
-      const local = localRaw.settings || {};
-      if (local.model || local.provider) {
-        s = { provider: local.provider || 'openrouter', model: local.model || 'anthropic/claude-haiku-4.5' };
-        await chrome.storage.sync.set({ settings: s });
-      }
+    let model;
+    try {
+      const { settings } = await chrome.storage.sync.get('settings');
+      model = settings?.model;
+    } catch (_) {}
+    if (!models.some((m) => m.id === model)) model = defaultModel; // drop obsolete ids
+
+    el.settingsProvider.value = 'openrouter';
+    el.settingsModel.innerHTML = '';
+    for (const m of models) {
+      const option = document.createElement('option');
+      option.value = m.id;
+      option.textContent = m.label;
+      el.settingsModel.appendChild(option);
     }
-    const provider = s.provider || 'openrouter';
-    const model = s.model || 'anthropic/claude-haiku-4.5';
-    settingsProvider.value = provider;
-    refreshSettingsModelOptions();
-    settingsModel.value = model;
-    if (!settingsModel.value && MODEL_OPTIONS[provider]?.length) settingsModel.value = MODEL_OPTIONS[provider][0].id;
+    el.settingsModel.value = model || defaultModel;
+    if (el.settingsModel.value !== model) {
+      await chrome.storage.sync.set({ settings: { provider: 'openrouter', model: el.settingsModel.value } });
+    }
     updateCurrentModelLabel();
+
+    try {
+      const { openrouterApiKey } = await chrome.storage.local.get('openrouterApiKey');
+      el.settingsApiKey.placeholder = openrouterApiKey
+        ? 'Key saved'
+        : 'Leave empty to use .env fallback';
+    } catch (_) {}
   }
 
   function updateCurrentModelLabel() {
-    const provider = settingsProvider.value;
-    const modelId = settingsModel.value;
-    const models = MODEL_OPTIONS[provider] || [];
-    const option = models.find((m) => m.id === modelId);
-    const label = option?.label ?? modelId;
-    if (currentModelLabel) currentModelLabel.textContent = 'Model: ' + label;
-  }
-
-  settingsProvider.addEventListener('change', refreshSettingsModelOptions);
-  settingsProvider.addEventListener('change', async () => {
-    const provider = settingsProvider.value;
-    const model = settingsModel.value;
-    await chrome.storage.sync.set({ settings: { provider, model } });
-    updateCurrentModelLabel();
-  });
-  settingsModel.addEventListener('change', async () => {
-    const provider = settingsProvider.value;
-    const model = settingsModel.value;
-    await chrome.storage.sync.set({ settings: { provider, model } });
-    updateCurrentModelLabel();
-  });
-  settingsSave.addEventListener('click', async () => {
-    const provider = settingsProvider.value;
-    const model = settingsModel.value;
-    await chrome.storage.sync.set({ settings: { provider, model } });
-    updateCurrentModelLabel();
-    settingsStatus.textContent = 'Settings saved.';
-    settingsStatus.className = 'success';
-  });
-
-  async function checkAndLoadPersona() {
-    try {
-      const storedPersona = await getFromStorage('persona');
-      if (storedPersona?.age && storedPersona?.gender && storedPersona?.occupation && storedPersona?.description) {
-        updatePersonaFields(storedPersona);
-        personaLoaded = true;
-        return true;
-      }
-      await generatePersona();
-      personaLoaded = true;
-      return false;
-    } catch (_) {
-      await generatePersona();
-      personaLoaded = true;
-      return false;
-    }
-  }
-
-  async function checkAndLoadAspects() {
-    try {
-      const storedAspects = await getFromStorage('aspects');
-      if (storedAspects?.length > 0) {
-        updateAspectsDisplay(storedAspects);
-        aspectsLoaded = true;
-        return true;
-      }
-      await generateAspects();
-      aspectsLoaded = true;
-      return false;
-    } catch (_) {
-      await generateAspects();
-      aspectsLoaded = true;
-      return false;
-    }
-  }
-
-  async function checkAndAutoGenerateReview() {
-    if (aspectsLoaded && personaLoaded) {
-      const storedReview = await getFromStorage('review');
-      if (!storedReview) await generateReview();
+    const option = models.find((m) => m.id === el.settingsModel.value);
+    if (el.currentModelLabel) {
+      el.currentModelLabel.textContent = `Model: ${option?.label ?? el.settingsModel.value ?? ''}`;
     }
   }
 
   async function refreshPanelContent() {
-    aspectsLoaded = false;
-    personaLoaded = false;
-    try {
-      await loadSettings();
-      const isAmazonPage = await checkAmazonPage();
-      if (isAmazonPage) {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        await ensureContentScriptInjected(tab.id);
-        const asin = (await getAsinOrTabId()).asinOrTabId;
-        const isAsin = typeof asin === 'string' && /^[A-Z0-9]{10}$/.test(asin);
-        if (isAsin) {
-          const storedReview = await getFromStorage('review');
-          if (storedReview) {
-            const { title, review } = parseReviewText(storedReview);
-            reviewOutputDiv.value = review;
-            reviewTitleDiv.value = title;
-            copyButton.style.display = 'block';
-            copyTitleButton.style.display = 'block';
-            updateWriteReviewButtonState(true);
-            statusDiv.textContent = 'Review loaded from storage.';
-            statusDiv.className = 'success';
-          } else {
-            updateWriteReviewButtonState(false);
-          }
-          await checkAndLoadPersona();
-          await checkAndLoadAspects();
-          if (!storedReview) await checkAndAutoGenerateReview();
-        } else {
-          const title = await getProductTitle();
-          if (title) {
-            productTitleDiv.textContent = title;
-            await checkAndLoadAspects();
-            await checkAndLoadPersona();
-            await checkAndAutoGenerateReview();
-          } else {
-            productTitleDiv.textContent = 'Could not get product title';
-            productTitleDiv.style.color = 'red';
-          }
-        }
-        if (!isAsin) {
-          productTitleDiv.textContent = productTitleDiv.textContent || 'Could not get product ID from URL';
-          if (!productTitleDiv.textContent.includes('product')) productTitleDiv.style.color = 'red';
-        }
+    await loadSettings();
+
+    const path = isSupportedAmazonUrl(ctx.url);
+    if (!path.ok) {
+      el.productTitle.textContent = path.reason === 'not-amazon'
+        ? 'Please navigate to an Amazon product page'
+        : 'Please navigate to an Amazon product or review page';
+      el.productTitle.style.color = 'red';
+      return;
+    }
+    ctx.isProductPage = true;
+
+    const suffix = extractAsin(ctx.url) ?? ctx.tabId;
+    ctx.asinOrTabId = suffix;
+    const stored = await loadStored(['productInfo', 'persona', 'aspects', 'review']);
+
+    // Show remembered state immediately.
+    if (stored.review) {
+      const { title, review } = parseReviewText(stored.review);
+      showReview(title, review);
+      setStatus('success', 'Review loaded from storage.');
+    } else {
+      hideReview();
+    }
+    updatePersonaFields(stored.persona);
+    updateAspectsDisplay(stored.aspects);
+
+    // Need product info for the prompt; prefer the stored copy.
+    let productInfo = stored.productInfo;
+    if (!productInfo) {
+      setStatus('', 'Reading product page…');
+      try {
+        productInfo = await scrapeProductInfo();
+        await saveStored({ productInfo });
+        if (stored.review) setStatus('success', 'Review loaded from storage.');
+      } catch (error) {
+        el.productTitle.textContent = error.message;
+        el.productTitle.style.color = 'red';
+        setStatus('error', 'Could not read product details. Try again after reloading the page.');
+        return;
       }
-    } catch (error) {
-      console.error('Init error:', error);
-      productTitleDiv.textContent = 'Error: ' + (error?.message || 'Unknown');
-      productTitleDiv.style.color = 'red';
+    }
+    if (productInfo?.title) {
+      el.productTitle.textContent = productInfo.title;
+      el.productTitle.style.color = '#1a1a1a';
+    }
+
+    // Nothing stored → single combined call. Otherwise only fill remembered
+    // gaps; never re-generate persona/aspects from scratch on every open.
+    if (!stored.review && !stored.persona && !stored.aspects) {
+      try {
+        setStatus('', 'Generating persona, aspects, and review…');
+        await generateFull(productInfo);
+        setStatus('success', 'Review generated.');
+        return;
+      } catch (error) {
+        setStatus('error', error?.message || 'Generation failed.');
+        return;
+      }
+    }
+
+    // Partial state (e.g. persona stored but review missing): fill just the
+    // missing review; missing persona/aspects stay filled lazily by the
+    // regenerate handlers when needed.
+    if (!stored.review) {
+      try {
+        setStatus('', 'Generating review…');
+        await generateReview();
+        setStatus('success', 'Review generated.');
+      } catch (error) {
+        setStatus('error', error?.message || 'Generation failed.');
+      }
     }
   }
 
-  chrome.runtime.onMessage.addListener((request) => {
-    if (request.action === 'refreshPanel') refreshPanelContent();
+  async function init() {
+    try {
+      await getActiveTab();
+      await refreshPanelContent();
+    } catch (error) {
+      console.error('Init error:', error);
+      el.productTitle.textContent = `Error: ${error?.message || 'Unknown'}`;
+      el.productTitle.style.color = 'red';
+    }
+  }
+
+  // ------------------------------------------------------------ write flow
+
+  async function openAmazonReviewPage() {
+    const productId = ctx.asinOrTabId && /^[A-Z0-9]{10}$/.test(String(ctx.asinOrTabId))
+      ? String(ctx.asinOrTabId)
+      : extractAsin(ctx.url) || null;
+    if (!productId) {
+      setStatus('error', 'Could not determine the product ID. Open this from a product page.');
+      return;
+    }
+    const reviewText = el.reviewOutput.value.trim();
+    const reviewTitle = el.reviewTitle.value.trim();
+    if (!reviewText) {
+      setStatus('error', 'Generate or write a review first.');
+      return;
+    }
+    const fullReviewText = `Title: ${reviewTitle}\n\nReview: ${reviewText}`;
+    await saveStored({ review: fullReviewText });
+
+    const reviewUrl = `https://www.amazon.com/review/review-your-purchases/?asin=${productId}`;
+    try {
+      const newTab = await chrome.tabs.create({ url: reviewUrl });
+      // review-page.js auto-runs on that page; also poke it after load in case
+      // the auto-run raced the form. It senses no pre-filled text via message.
+      setTimeout(() => {
+        chrome.tabs.sendMessage(newTab.id, { action: 'fillReviewTextarea', reviewText: fullReviewText })
+          .catch(() => {});
+      }, 2500);
+    } catch (error) {
+      setStatus('error', `Could not open the review page: ${error?.message || 'unknown'}`);
+    }
+  }
+
+  // ------------------------------------------------------------- settings
+
+  el.settingsModel.addEventListener('change', async () => {
+    await chrome.storage.sync.set({
+      settings: { provider: el.settingsProvider.value, model: el.settingsModel.value },
+    });
+    updateCurrentModelLabel();
   });
 
-  await refreshPanelContent();
+  el.settingsSave.addEventListener('click', async () => {
+    await chrome.storage.sync.set({
+      settings: { provider: el.settingsProvider.value, model: el.settingsModel.value },
+    });
+    updateCurrentModelLabel();
+    el.settingsStatus.textContent = 'Settings saved.';
+    el.settingsStatus.className = 'success';
+  });
+
+  el.settingsApiKeySave.addEventListener('click', async () => {
+    const apiKey = el.settingsApiKey.value.trim();
+    try {
+      if (apiKey) await chrome.storage.local.set({ openrouterApiKey: apiKey });
+      else await chrome.storage.local.remove('openrouterApiKey');
+      el.settingsApiKey.value = '';
+      el.settingsApiKey.placeholder = apiKey ? 'Key saved' : 'Leave empty to use .env fallback';
+      el.settingsStatus.textContent = apiKey ? 'API key saved.' : 'API key removed (falls back to .env).';
+      el.settingsStatus.className = 'success';
+    } catch (error) {
+      el.settingsStatus.textContent = `Could not save key: ${error?.message || 'unknown'}`;
+      el.settingsStatus.className = 'error';
+    }
+  });
+
+  el.settingsKeyTest.addEventListener('click', async () => {
+    const apiKey = el.settingsApiKey.value.trim() || null; // null → test the stored one
+    el.settingsKeyTest.disabled = true;
+    el.settingsStatus.textContent = 'Testing key…';
+    el.settingsStatus.className = '';
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'testKey', apiKey });
+      if (response?.ok) {
+        el.settingsStatus.textContent = `Key OK${response.summary ? ` — ${response.summary}` : ''}.`;
+        el.settingsStatus.className = 'success';
+        if (apiKey) await chrome.storage.local.set({ openrouterApiKey: apiKey });
+      } else {
+        el.settingsStatus.textContent = response?.error || 'Key check failed.';
+        el.settingsStatus.className = 'error';
+      }
+    } catch (error) {
+      el.settingsStatus.textContent = error?.message || 'Key check failed.';
+      el.settingsStatus.className = 'error';
+    } finally {
+      el.settingsKeyTest.disabled = false;
+    }
+  });
+
+  // --------------------------------------------------------------- wiring
+
+  el.busyButtons.review.addEventListener('click', () => regenerate('review'));
+  el.busyButtons.persona.addEventListener('click', () => regenerate('persona'));
+  el.busyButtons.aspects.addEventListener('click', () => regenerate('aspects'));
+  el.writeReview.addEventListener('click', () => openAmazonReviewPage());
+
+  document.getElementById('tabMain').addEventListener('click', () => switchTab('main'));
+  document.getElementById('tabSettings').addEventListener('click', () => switchTab('settings'));
+  function switchTab(which) {
+    const mainTab = document.getElementById('tabMain');
+    const settingsTab = document.getElementById('tabSettings');
+    const mainPanel = document.getElementById('panelMain');
+    const settingsPanel = document.getElementById('panelSettings');
+    mainTab.classList.toggle('active', which === 'main');
+    settingsTab.classList.toggle('active', which === 'settings');
+    mainPanel.classList.toggle('active', which === 'main');
+    settingsPanel.classList.toggle('active', which === 'settings');
+  }
+
+  function copyFlow(source, button) {
+    const original = button.textContent;
+    navigator.clipboard.writeText(source.value).then(() => {
+      button.textContent = 'Copied!';
+      setTimeout(() => { button.textContent = original; }, 2000);
+    }).catch(() => setStatus('error', 'Copy failed.'));
+  }
+  el.copyButton.addEventListener('click', () => copyFlow(el.reviewOutput, el.copyButton));
+  el.copyTitleButton.addEventListener('click', () => copyFlow(el.reviewTitle, el.copyTitleButton));
+
+  await init();
 });

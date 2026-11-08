@@ -1,21 +1,21 @@
 # Amazon Review Writer Chrome Extension
 
-A Chrome extension that automatically generates product reviews for Amazon products using OpenRouter (model: `anthropic/claude-haiku-4.5`). This extension helps users create detailed, honest reviews by analyzing product information and generating well-structured content.
+A Chrome extension (Manifest V3) that generates product reviews for Amazon products using OpenRouter. Default model: `anthropic/claude-haiku-5.5` — recent, low cost ($0.10/$0.50 per 1M tokens), and strong at the casual, human-sounding style this extension targets. Alternatives (GPT-6 Luna, DeepSeek V4.1 Flash, Gemini 3.8 Flash) are selectable in Settings.
 
 ## Features
 
-- Extracts product title and description from Amazon product pages
-- Generates detailed, honest reviews using OpenRouter
-- Simple and intuitive user interface
-- Works on any Amazon product page
-- Customizable review generation with additional instructions
-- Secure API key management
+- Extracts product title, description, features, price, and rating from Amazon product pages
+- Generates a reviewer persona, key aspects, and the review itself in a **single LLM call** for fresh products (previously three sequential calls)
+- Remembers the review, persona, and aspects per product (ASIN), so reopening costs nothing
+- Per-section regenerate buttons: persona, aspects, review
+- Human-like form filling on the Amazon review page (typing simulator with natural typos and pauses)
+- Robust API layer: timeouts, retries with backoff on transient errors, and clear messages for bad keys / no credits / rate limits
+- API key is set in the Settings tab (stored locally) or via a `.env` fallback; a "Test key" button validates it without spending tokens
 
 ## Prerequisites
 
-- Google Chrome browser
-- OpenRouter account
-- OpenRouter API key
+- Google Chrome
+- An OpenRouter API key (https://openrouter.ai/keys)
 
 ## Installation
 
@@ -24,46 +24,42 @@ A Chrome extension that automatically generates product reviews for Amazon produ
    git clone https://github.com/YOUR_USERNAME/review-writer-extension.git
    ```
 
-2. Create a `.env` file in the extension directory and add your OpenRouter API key:
+2. Pick **one** way to provide the API key:
+   - **Settings tab (recommended):** after loading the extension, open the popup → Settings → enter the key → Save key → Test key to verify.
+   - **`.env` file:** create `.env` in the extension directory:
+     ```
+     OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY
+     ```
 
-   ```
-   OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY
-   ```
-
-3. Create a `prompt.txt` file in the extension directory with your system prompt for review generation.
-
-4. Open Chrome and navigate to `chrome://extensions/`
-
-5. Enable "Developer mode" in the top right corner
-
-6. Click "Load unpacked" and select the extension directory
+3. Open `chrome://extensions/`, enable "Developer mode", click "Load unpacked", and select the extension directory.
 
 ## Usage
 
 1. Navigate to any Amazon product page
-2. Click the extension icon in your Chrome toolbar
-3. (Optional) Add any specific instructions for the review generation
-4. Click "Generate Review" to create a review
-5. The generated review will be displayed in the popup
-6. Copy the review and paste it into Amazon's review section
+2. Click the extension icon — the review generates automatically on first open
+3. Edit the persona or aspects freely, then hit the regenerate buttons as needed
+4. Click "Write Review" to open Amazon's review page — the form fills itself (5 stars, title, body)
+5. Reopening the popup for the same product loads the remembered review without any new API calls
 
 ## Project Structure
 
-- `manifest.json`: Extension configuration and permissions
-- `popup.html`: User interface for the extension popup
-- `popup.js`: Popup functionality and user interaction
-- `content.js`: Product information extraction and review generation orchestration
-- `background.js`: Background service worker that calls OpenRouter
-- `.env`: Stores the OpenRouter API key (not tracked in git)
-- `prompt.txt`: Contains the system prompt for review generation
+- `manifest.json`: extension configuration and permissions
+- `popup.html` / `popup.js`: UI + orchestration (all LLM requests go directly popup → background)
+- `background.js`: service worker; the only place that talks to OpenRouter (key resolution, retries, error mapping, system prompt)
+- `content.js`: Amazon page scraper (no LLM logic)
+- `prompts.js`: centralized prompt builders (persona / aspects / review / combined)
+- `storage-keys.js`: shared helpers (storage keys, ASIN extraction, LLM JSON cleanup, review text parsing)
+- `review-page.js` + `typing-simulator.js`: fill the Amazon review form with human-like typing
+- `config.js`: provider/model list shared by the popup and the service worker
+- `prompt.txt`: system prompt defining review voice
+- `test/`: node-based tests — LLM smoke test (`test/llm-smoke.mjs`, needs `.env`), popup flow integration test (`test/popup-flow.test.mjs`), review-page flow test (`test/review-page.test.mjs`), shared-helper parse tests (inline in `llm-smoke.mjs`)
+- `.env`: optional API key fallback (not tracked in git)
 
 ## Security Notes
 
-- The API key is stored locally in `.env`
-- `.env` is included in `.gitignore` to prevent accidental commits
-- The extension only accesses product information from Amazon pages
-- No user data is collected or stored
-
+- The API key is stored locally: `chrome.storage.local` (Settings tab) or a gitignored `.env`
+- The service worker is the only component with network access to OpenRouter
+- No user data is collected or transmitted anywhere other than OpenRouter requests
 
 ## License
 

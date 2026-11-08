@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Amazon Review Writer",
-  "version": "1.0",
+  "version": "2.0.0",
   "description": "Generate product reviews for Amazon using OpenRouter",
   "permissions": ["activeTab", "scripting", "tabs", "storage"],
   "host_permissions": [
@@ -14,7 +14,7 @@
   "content_scripts": [
     {
       "matches": ["https://*.amazon.com/*"],
-      "js": ["prompts.js", "content.js"],
+      "js": ["storage-keys.js", "content.js"],
       "run_at": "document_end"
     },
     {
