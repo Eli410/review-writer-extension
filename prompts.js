@@ -82,7 +82,63 @@ Rules:
 - review: follows the same instructions as a standalone review request.`;
 }
 
+/**
+ * "From Reviews" generation: the product's own listing (title/image) may be
+ * weak, so the real signal is the reviews other customers actually posted.
+ * The model reads those and writes a new review in the same style, filtered
+ * through the reviewer persona.
+ */
+function buildCustomerReviewsBlock(customerReviews, { maxReviews = 12, maxBodyLength = 280 } = {}) {
+  const reviews = Array.isArray(customerReviews) ? customerReviews : [];
+  const selected = reviews
+    .filter((r) => r && (r.body || r.title))
+    .slice(0, maxReviews);
+  if (selected.length === 0) return 'No existing customer reviews found.';
+
+  return selected
+    .map((r, index) => {
+      const stars = r.rating ? `${r.rating}/5 ` : '';
+      const date = r.date ? ` (${r.date})` : '';
+      const title = r.title ? `"${r.title}" ` : '';
+      return `${index + 1}. ${stars}${title}${date}: ${r.body.slice(0, maxBodyLength)}`;
+    })
+    .join('\n');
+}
+
+function buildReviewsBasedPrompt(productInfo, persona, aspects, customerReviews) {
+  const parts = [];
+  if (aspects && aspects.length > 0) {
+    parts.push(`If the existing reviews mention these aspects, keep them: ${aspects.join(', ')}.`);
+  }
+  parts.push('Do not mention medical, health, or supplement effects or efficacy.');
+
+  return `The customer reviews below were actually posted for this product. Write a NEW review for it that reads like it was written by the same kind of buyer (similar tone, vocabulary, and themes), but filtered through the Reviewer Persona below.
+
+Product Information (may be incomplete; trust the customer reviews over the listing):
+${describeProduct(productInfo)}
+
+Customer Reviews Already Posted For This Product:
+${buildCustomerReviewsBlock(customerReviews)}
+
+Reviewer Persona:
+Age: ${persona?.age || 'Not available'}
+Gender: ${persona?.gender || 'Not available'}
+Occupation: ${persona?.occupation || 'Not available'}
+Description: ${persona?.description || 'Not available'}
+
+${parts.join('\n')}
+
+Rules:
+- Capture what most existing reviewers praise, how they describe it, and phrases that come up more than once ("great value", "easy to use") — but write original sentences. Do not copy a whole existing review or reuse distinctive full sentences.
+- Keep it plausible and casual, 80-150 words, like the typical positive reviews shown above.
+- Write it as a five-star review.
+
+IMPORTANT: Return ONLY valid JSON on a single line with exactly this shape (no code fences, no extra keys, no extra text):
+{"title":"<concise headline, similar in style to the existing review titles>","review":"<full review body>"}`;
+}
+
 window.buildPersonaPrompt = buildPersonaPrompt;
 window.buildAspectsPrompt = buildAspectsPrompt;
 window.buildReviewPrompt = buildReviewPrompt;
 window.buildFullPrompt = buildFullPrompt;
+window.buildReviewsBasedPrompt = buildReviewsBasedPrompt;

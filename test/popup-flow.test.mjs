@@ -44,7 +44,7 @@ function buildPopupEnv({ tabUrl, llmHandler }) {
   const localStore = new Map();
   const syncStore = new Map();
   const fakeTab = { id: 1, url: tabUrl };
-  const calls = { llm: [], testKey: 0 };
+  const calls = { llm: [], llmMsgs: [], testKey: 0 };
   const env = { byId, elements, localStore, syncStore, calls, dclHandlers: [], fakeTab };
 
   const document = {
@@ -79,7 +79,7 @@ function buildPopupEnv({ tabUrl, llmHandler }) {
       query: async () => [fakeTab],
       create: async ({ url }) => ({ id: 99, url }),
       async sendMessage(tabId, msg) {
-        if (msg.action === 'ping') return { status: 'ok' };
+        if (msg.action === 'ping') return { status: 'ok', version: 2 };
         if (msg.action === 'getProductInfo') return { productInfo: PRODUCT_INFO };
         if (msg.action === 'getProductTitle') return { title: PRODUCT_INFO.title };
         if (msg.action === 'getAsin') return { asin: 'B07QT8RTV2' };
@@ -91,6 +91,7 @@ function buildPopupEnv({ tabUrl, llmHandler }) {
       async sendMessage(msg) {
         if (msg.action === 'llmComplete') {
           calls.llm.push(msg.task);
+          calls.llmMsgs.push(msg);
           return { text: llmHandler(msg.task) };
         }
         if (msg.action === 'testKey') {
@@ -104,7 +105,7 @@ function buildPopupEnv({ tabUrl, llmHandler }) {
     scripting: { executeScript: async () => {} },
   };
 
-  const ctx = { document, chrome, setTimeout, window: {}, console, navigator: { clipboard: { writeText: async () => {} } } };
+  const ctx = { document, chrome, setTimeout, clearTimeout, window: {}, console, navigator: { clipboard: { writeText: async () => {} } } };
   env.ctx = ctx;
   vm.createContext(ctx);
   for (const file of ['config.js', 'storage-keys.js', 'prompts.js', 'popup.js']) {
@@ -198,7 +199,83 @@ const testAsync = async (label, fn) => {
   assert.ok(env.byId('personaGender').value === 'female', 'stored persona loaded into fields');
 }
 
-// ---- scenario 5: settings — save + test key
+// ---- scenario 5: "From Reviews" — existing reviews are fetched, prompt includes them, review saved & shown
+{
+  const env = buildPopupEnv({ tabUrl: 'https://www.amazon.com/dp/B07QT8RTV2', llmHandler: (t) => CANNED[t]() });
+  env.localStore.set('persona_B07QT8RTV2', { age: 31, gender: 'female', occupation: 'nurse', description: 'works long shifts' });
+  env.ctx.chrome.tabs.sendMessage = async (_tabId, msg) => {
+    if (msg.action === 'ping') return { status: 'ok', version: 2 };
+    if (msg.action === 'getExistingReviews') {
+      return {
+        reviews: [
+          { title: 'Held up through 12 hour shifts', rating: '5.0', date: 'August 3, 2025', body: 'I take this to every shift and it keeps my water cold till the end. Easy to clean too, which matters at work.' },
+          { title: 'Great bottle', rating: '5.0', date: 'July 2025', body: 'No leaks, fits the car cupholder, and the handle is solid. Buying another one.' },
+        ],
+      };
+    }
+    return null;
+  };
+  await run(env);
+  const llmBefore = env.calls.llm.length;
+  await testAsync('from reviews: happy path', async () => {
+    await env.byId('generateFromReviews').click();
+    assert.deepEqual(env.calls.llm.slice(llmBefore), ['review'], 'single review LLM call on the button');
+    const prompt = env.calls.llmMsgs.at(-1).userPrompt;
+    assert.ok(prompt.includes('Customer Reviews Already Posted For This Product'), 'prompt lists the reviews section');
+    assert.ok(prompt.includes('Held up through 12 hour shifts'), 'prompt includes existing review titles');
+    assert.ok(prompt.includes('No leaks, fits the car cupholder'), 'prompt includes existing review bodies');
+    assert.ok(prompt.includes('Age: 31'), 'prompt includes persona age');
+    assert.ok(env.byId('reviewOutput').value.includes('Still hot at the office'), 'generated review body shown');
+    assert.ok(env.localStore.has('review_B07QT8RTV2'), 'review stored under ASIN');
+  });
+}
+
+// ---- scenario 6: "From Reviews" with no reviews found → friendly error, no review call
+{
+  const env = buildPopupEnv({ tabUrl: 'https://www.amazon.com/dp/B07QT8RTV2', llmHandler: (t) => CANNED[t]() });
+  env.localStore.set('persona_B07QT8RTV2', { age: 31, gender: 'female', occupation: 'nurse', description: 'works long shifts' });
+  env.ctx.chrome.tabs.sendMessage = async (_tabId, msg) => {
+    if (msg.action === 'ping') return { status: 'ok', version: 2 };
+    if (msg.action === 'getExistingReviews') return { reviews: [] };
+    return null;
+  };
+  await run(env);
+  const llmBefore = env.calls.llm.length;
+  await testAsync('from reviews: no reviews error path', async () => {
+    await env.byId('generateFromReviews').click();
+    assert.ok(/No customer reviews found/.test(env.byId('status').textContent), 'status explains the failure');
+    assert.equal(env.calls.llm.length, llmBefore, 'no LLM call when there is nothing to mimic');
+  });
+}
+
+// ---- scenario 6b: stale content script (pre-version ping) → re-inject BOTH files once, flow still works
+{
+  const env = buildPopupEnv({ tabUrl: 'https://www.amazon.com/dp/B07QT8RTV2', llmHandler: (t) => CANNED[t]() });
+  env.localStore.set('persona_B07QT8RTV2', { age: 40, gender: 'male', occupation: 'barista', description: 'coffee daily' });
+  let injected = [];
+  env.ctx.chrome.scripting.executeScript = async ({ files }) => { injected.push(files); };
+  let scriptVersion = 0; // orphaned script: no version until (re)injected
+  env.ctx.chrome.tabs.sendMessage = async (_tabId, msg) => {
+    if (msg.action === 'ping') return scriptVersion < 2 ? { status: 'ok' } : { status: 'ok', version: scriptVersion };
+    if (msg.action === 'getExistingReviews') {
+      return {
+        reviews: [{ title: 'Good brew', rating: '5.0', date: '2025', body: 'Nice and clean cup every morning.' }],
+      };
+    }
+    return null;
+  };
+  // As in real Chrome, a fresh executeScript replaces the stale copy.
+  env.ctx.chrome.scripting.executeScript = async ({ files }) => { injected.push(files); scriptVersion = 2; };
+  await run(env);
+  await testAsync('from reviews: stale script triggers self-healing re-injection', async () => {
+    await env.byId('generateFromReviews').click();
+    assert.equal(injected.length, 1, 'exactly one re-injection');
+    assert.deepEqual([...injected[0]], ['storage-keys.js', 'content.js'], 'both files re-injected');
+    assert.equal(env.byId('status').className, 'success', 'flow completed after re-injection');
+  });
+}
+
+// ---- scenario 7: settings — save + test key
 {
   const env = buildPopupEnv({ tabUrl: 'https://www.amazon.com/dp/B07QT8RTV2', llmHandler: CANNED.full });
   env.byId('settingsApiKey').value = 'sk-or-v1-test';

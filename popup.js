@@ -16,12 +16,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     personaOccupation: document.getElementById('personaOccupation'),
     personaDescription: document.getElementById('personaDescription'),
     writeReview: document.getElementById('writeReview'),
+    generateFromReviews: document.getElementById('generateFromReviews'),
     copyButton: document.getElementById('copyReview'),
     copyTitleButton: document.getElementById('copyTitle'),
     busyButtons: {
       review: document.getElementById('regenerateReview'),
       persona: document.getElementById('regeneratePersona'),
       aspects: document.getElementById('regenerateAspects'),
+      fromReviews: document.getElementById('generateFromReviews'),
     },
     settingsProvider: document.getElementById('settingsProvider'),
     settingsModel: document.getElementById('settingsModel'),
@@ -85,19 +87,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function ensureContentScriptInjected(tabId) {
-    try {
-      const ping = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-      if (ping?.status === 'ok') return true;
-    } catch (_) {}
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-    for (let i = 0; i < 5; i++) {
-      await new Promise((r) => setTimeout(r, 150));
+    // Content scripts evolve with the extension; a page opened before a
+    // reload keeps an orphaned (stale) copy. A ping only proves presence, so
+    // require the reported version to be current — and when it is not (or the
+    // ping race is won by the stale copy), heal by injecting both files once.
+    // After that any 'ok' ping is fine: the fresh copy answers new actions,
+    // while stale copies only know the old unchanged ones.
+    const REQUIRED_CONTENT_VERSION = 2;
+    const pingOnce = async () => {
       try {
-        const ping = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-        if (ping?.status === 'ok') return true;
-      } catch (_) {}
+        return await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+      } catch (_) {
+        return null;
+      }
+    };
+    const isFresh = (p) => p?.status === 'ok' && Number(p?.version) >= REQUIRED_CONTENT_VERSION;
+
+    let ping = await pingOnce();
+    if (ping && !isFresh(ping)) {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['storage-keys.js', 'content.js'] });
+      ping = await pingOnce();
     }
-    throw new Error('Could not connect to the page. Refresh it and try again.');
+    if (!ping || !isFresh(ping)) {
+      for (let i = 0; i < 5 && !(ping && ping.status === 'ok'); i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        ping = await pingOnce();
+      }
+      if (!ping || ping.status !== 'ok') {
+        throw new Error('Could not connect to the page. Refresh it and try again.');
+      }
+    }
+    return true;
   }
 
   async function scrapeProductInfo() {
@@ -108,6 +128,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     const productInfo = response?.productInfo;
     if (!productInfo?.title) throw new Error('Could not read product details from this page.');
     return productInfo;
+  }
+
+  /** Rejects if the wrapped promise does not settle in time. */
+  function withTimeout(promise, timeoutMs, message) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  /** Customer reviews the item already has, straight from the page. */
+  async function fetchCustomerReviews() {
+    if (!ctx.isProductPage) throw new Error('Please navigate to an Amazon product page.');
+    await ensureContentScriptInjected(ctx.tabId);
+    const response = await withTimeout(
+      chrome.tabs.sendMessage(ctx.tabId, { action: 'getExistingReviews' }),
+      25000,
+      'Reading the reviews took too long. Try again.',
+    );
+    if (chrome.runtime.lastError) throw new Error('Could not read reviews from the page. Refresh it and try again.');
+    if (response?.error) throw new Error(`Could not read reviews from the page: ${response.error}`);
+    return Array.isArray(response?.reviews) ? response.reviews : [];
   }
 
   // ------------------------------------------------------------------ UI
@@ -282,6 +325,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
+   * "From Reviews" flow: persona + the item's existing customer reviews → a
+   * similar review. Meant for items whose listing (image/title) is weak, where
+   * the reviews carry the real product signal. The listing itself is optional:
+   * if it cannot be scraped, the prompt leans on reviews + persona alone.
+   */
+  async function generateReviewFromReviews() {
+    const persona = await ensurePersona();
+    let info = (await loadStored(['productInfo'])).productInfo;
+    if (!info) {
+      try {
+        info = await scrapeProductInfo();
+        await saveStored({ productInfo: info });
+      } catch (_) {
+        info = null; // listing unreadable — reviews carry the flow
+      }
+    }
+    const customerReviews = await fetchCustomerReviews();
+    if (customerReviews.length === 0) {
+      throw new Error('No customer reviews found for this item.');
+    }
+    const text = await llm('review', buildReviewsBasedPrompt(info, persona, currentAspects, customerReviews));
+    const parsed = normalizeReviewResult(parseJsonFromLLM(text));
+    if (!parsed) throw new Error('The model returned the review in an unexpected format. Try regenerating.');
+    await saveStored({ review: `Title: ${parsed.title}\n\nReview: ${parsed.review}` });
+    showReview(parsed.title, parsed.review);
+    return parsed;
+  }
+
+  /**
    * One combined call when a product has nothing stored yet: persona +
    * aspects + review together. Missing pieces fall back to single-task calls.
    */
@@ -311,7 +383,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function regenerate(kind) {
     withButton(kind, true);
-    setStatus('', 'Generating…');
+    setStatus('', kind === 'fromReviews' ? 'Reading existing reviews…' : 'Generating…');
     try {
       if (kind === 'persona') {
         await generatePersona();
@@ -319,6 +391,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (kind === 'aspects') {
         await generateAspects();
         setStatus('success', 'Key aspects generated.');
+      } else if (kind === 'fromReviews') {
+        await generateReviewFromReviews();
+        setStatus('success', 'Review generated from existing reviews.');
       } else {
         await generateReview();
         setStatus('success', 'Review generated.');
@@ -558,6 +633,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.busyButtons.review.addEventListener('click', () => regenerate('review'));
   el.busyButtons.persona.addEventListener('click', () => regenerate('persona'));
   el.busyButtons.aspects.addEventListener('click', () => regenerate('aspects'));
+  el.busyButtons.fromReviews.addEventListener('click', () => regenerate('fromReviews'));
   el.writeReview.addEventListener('click', () => openAmazonReviewPage());
 
   document.getElementById('tabMain').addEventListener('click', () => switchTab('main'));
